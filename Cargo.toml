@@ -1,0 +1,37 @@
+[package]
+name = "pvxs-rs"
+version = "0.1.0"
+edition = "2021"
+desciption = "PVXS Rust library"
+# license = ""
+# repository = ""
+
+[dependencies]
+# For Rust-C++ interop
+cxx = "1.0"
+
+# For dynamic loading of shared libraries (e.g., pvxs.dll)
+libloading = "0.8.6"
+
+# Optional for better error handling
+#anyhow = "1.0"          # For robust error handling
+#thiserror = "2.0.9"       # For custom error types
+
+# Optional if using asynchronous code
+#tokio = { version = "1.0", features = ["full"] }
+
+[build-dependencies]
+# For compiling C++ bridge code
+cxx-build = "1.0"
+
+[dev-dependencies]
+# For testing
+assert_matches = "1.5.0"  # Optional: for ergonomic test assertions
+
+[features]
+# Optional features for conditional compilation
+#async = []  # Add async support
+
+[workspace]
+# Optional if you plan to add multiple related crates
+#members = []

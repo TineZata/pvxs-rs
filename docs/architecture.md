@@ -2,7 +2,7 @@ pvxs-rust-wrapper/
 ├── Cargo.toml
 ├── build.rs
 ├── src/
-│   ├── lib.rs
+│   ├── lib.rs # Entry point for the library
 │   ├── bindings.rs
 │   ├── wrapper/
 │   │   ├── mod.rs
