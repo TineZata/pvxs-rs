@@ -15,3 +15,42 @@ pub fn get_version_str() -> String {
         }
     }
 }
+
+pub fn client_config_new() -> *mut crate::config::Config {
+    let lib = match crate::bindings::PvxsLibrary::new() {
+        Ok(lib) => lib,
+        Err(_) => return std::ptr::null_mut(),
+    }
+}
+
+/*
+pub fn client_config_from_env() -> *mut std::ffi::c_void {
+    let lib = match crate::bindings::PvxsLibrary::new() {
+        Ok(lib) => lib,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    unsafe { 
+        let config = lib.client_config_from_env();
+        if (config as *const std::ffi::c_void).is_null() {
+            std::ptr::null_mut()
+        } else {
+            config
+        }
+    }
+}*/
+
+/*pub fn client_context_from_env() -> *mut std::ffi::c_void {
+    let lib = match crate::bindings::PvxsLibrary::new() {
+        Ok(lib) => lib,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    unsafe { 
+        let context = lib.client_context_from_env();
+        if (context as *const std::ffi::c_void).is_null() {
+            std::ptr::null_mut()
+        } else {
+            context
+        }
+    }
+}*/
+

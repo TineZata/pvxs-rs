@@ -18,3 +18,5 @@ pub mod wrapper;  // High-level abstractions over the bindings
 
 // Publicly expose functions or types from submodules
 pub use wrapper::get_version_str;
+pub use wrapper::client_config_from_env;
+pub use wrapper::client_context_from_env;
