@@ -1,7 +1,7 @@
 use std::ffi::CStr;
 
 /// Wrapper for dynamically loaded library
-pub fn get_pvxs_version() -> String {
+pub fn get_version_str() -> String {
     let lib = match crate::bindings::PvxsLibrary::new() {
         Ok(lib) => lib,
         Err(_) => return "Err: PvxsLibrary failed to load".to_string(),

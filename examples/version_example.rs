@@ -1,4 +1,4 @@
 fn main() {
-    let version: String = pvxs_rs::get_pvxs_version();
+    let version: String = pvxs::get_version_str();
     println!("PVXS Version: {}", version);
 }

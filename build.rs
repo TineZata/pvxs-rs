@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 fn main() {
     // Debug: Notify that build.rs has started
-    eprintln!("TZ: Running build.rs");
+    eprintln!("Running build.rs");
 
     // Define the paths to PVXS headers and libraries
     let pvxs_lib_dir = "third_party/lib";
