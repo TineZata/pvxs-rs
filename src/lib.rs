@@ -1,6 +1,6 @@
 // Enable Rust features or warnings (optional but helpful)
-#![warn(missing_docs)]
-#![warn(rust_2018_idioms)]
+//#![warn(missing_docs)]
+//#![warn(rust_2018_idioms)]
 
 //! # PVXS Rust Wrapper
 //! A Rust wrapper for the PVXS library, providing safe and ergonomic bindings for interacting

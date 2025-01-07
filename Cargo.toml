@@ -8,7 +8,7 @@ desciption = "PVXS Rust library"
 
 [dependencies]
 # For Rust-C++ interop
-cxx = "1.0"
+# cxx = "1.0"
 
 # For dynamic loading of shared libraries (e.g., pvxs.dll)
 libloading = "0.8.6"
@@ -21,17 +21,20 @@ libloading = "0.8.6"
 #tokio = { version = "1.0", features = ["full"] }
 
 [build-dependencies]
-# For compiling C++ bridge code
-cxx-build = "1.0"
 
 [dev-dependencies]
 # For testing
 assert_matches = "1.5.0"  # Optional: for ergonomic test assertions
 
 [features]
-# Optional features for conditional compilation
-#async = []  # Add async support
+dynamic = [] # Flag to allow dynamic loading
 
 [workspace]
 # Optional if you plan to add multiple related crates
 #members = []
+
+[build]
+target = "i686-pc-windows-msvc"
+
+[target.i686-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
