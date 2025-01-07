@@ -16,41 +16,25 @@ pub fn get_version_str() -> String {
     }
 }
 
-pub fn client_config_new() -> *mut crate::config::Config {
+pub fn client_context_from_env() -> *mut crate::Context {
     let lib = match crate::bindings::PvxsLibrary::new() {
         Ok(lib) => lib,
         Err(_) => return std::ptr::null_mut(),
-    }
+    };
+    unsafe { lib.context_from_env() }
 }
 
-/*
-pub fn client_config_from_env() -> *mut std::ffi::c_void {
+pub fn context_close() {
     let lib = match crate::bindings::PvxsLibrary::new() {
         Ok(lib) => lib,
-        Err(_) => return std::ptr::null_mut(),
+        Err(_) => {
+            eprintln!("Failed to load PVXS library");
+            return;
+        },
     };
-    unsafe { 
-        let config = lib.client_config_from_env();
-        if (config as *const std::ffi::c_void).is_null() {
-            std::ptr::null_mut()
-        } else {
-            config
-        }
-    }
-}*/
 
-/*pub fn client_context_from_env() -> *mut std::ffi::c_void {
-    let lib = match crate::bindings::PvxsLibrary::new() {
-        Ok(lib) => lib,
-        Err(_) => return std::ptr::null_mut(),
-    };
-    unsafe { 
-        let context = lib.client_context_from_env();
-        if (context as *const std::ffi::c_void).is_null() {
-            std::ptr::null_mut()
-        } else {
-            context
-        }
+    unsafe {
+        lib.context_close();
     }
-}*/
+}
 

@@ -1,6 +1,5 @@
 use libloading::{Library, Symbol};
 use std::os::raw::c_char;
-use std::os::raw::c_void;
 
 pub struct PvxsLibrary {
     lib: Library,
@@ -43,49 +42,37 @@ impl PvxsLibrary {
         func()
     }
 
-    pub unsafe fn client_config_new(self) -> *mut crate::wrapper::config::Config {
-        let func: Symbol<unsafe extern "C" fn() -> *mut Config> = self
-            .lib
-            .get(if cfg!(target_os = "windows") {
-                b"??4Config@client@pvxs@@QAEAAU012@$$QAU012@@Z"
-            } else if cfg!(target_os = "linux") {
-                b"_undefined_linux_mangled_config_newEv"
-            } else {
-                panic!("Unsupported platform");
-            })
-            .expect("Failed to find the mangled symbol for config_new");
-
-        func()
-    } 
-
-    /*pub unsafe fn client_config_from_env(&self) -> *mut std::ffi::c_void {
-        let func: Symbol<unsafe extern "C" fn() -> *mut std::ffi::c_void> = self
-            .lib
-            .get(if cfg!(target_os = "windows") {
-                b"?fromEnv@Config@client@pvxs@@SA?AU123@XZ"
-            } else if cfg!(target_os = "linux") {
-                b"_undefined_linux_mangled_config_from_envEv"
-            } else {
-                panic!("Unsupported platform");
-            })
-            .expect("Failed to find the mangled symbol for config_from_env");
-
-        func()
-    }
-
-    pub unsafe fn client_context_from_env(&self) -> *mut std::ffi::c_void {
-        let func: Symbol<unsafe extern "C" fn() -> *mut std::ffi::c_void> = self
+    // ?fromEnv@Context@client@pvxs@@SA?AV123@XZ (public: static class pvxs::client::Context __cdecl pvxs::client::Context::fromEnv(void))
+    pub unsafe fn context_from_env(&self) -> *mut crate::Context {
+        let func: Symbol<unsafe extern "C" fn() -> *mut crate::Context> = self
             .lib
             .get(if cfg!(target_os = "windows") {
                 b"?fromEnv@Context@client@pvxs@@SA?AV123@XZ"
             } else if cfg!(target_os = "linux") {
-                b"_undefined_linux_mangled_context_from_envEv"
+                b"_ZN4pvxs6client7Context7fromEnvEv"
             } else {
                 panic!("Unsupported platform");
             })
-            .expect("Failed to find the mangled symbol for context_from_env");
-
+            .expect("Failed to find symbol for Context::fromEnv");
         func()
-    }*/
+    }
+
+    // ?close@Context@client@pvxs@@QAEXXZ (public: void __thiscall pvxs::client::Context::close(void))
+    pub unsafe fn context_close(&self) {
+        // Dynamically load the function
+        let func: Symbol<unsafe extern "C" fn()> = self
+            .lib
+            .get(if cfg!(target_os = "windows") {
+                b"?close@Context@client@pvxs@@QAEXXZ" // Windows mangled name
+            } else if cfg!(target_os = "linux") {
+                b"_ZN4pvxs6client7Context5closeEv" // Linux mangled name
+            } else {
+                panic!("Unsupported platform");
+            })
+            .expect("Failed to find symbol for Context::close");
+    
+        func(); // Call the function
+    }    
 }
+
 

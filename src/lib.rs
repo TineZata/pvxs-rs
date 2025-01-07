@@ -6,17 +6,16 @@
 //! A Rust wrapper for the PVXS library, providing safe and ergonomic bindings for interacting
 //! with the EPICS PVXS library.
 //!
-//! ## Example
-//! ```rust
-//! let version = pvxs::get_version_str();
-//! println!("PVXS Version: {}", version);
-//! ```
 
 // Re-export modules
 pub mod bindings; // Raw bindings to the PVXS library
 pub mod wrapper;  // High-level abstractions over the bindings
+pub mod config;   // Configuration settings for the wrapper
+pub mod context;   // Client context for the wrapper
 
 // Publicly expose functions or types from submodules
 pub use wrapper::get_version_str;
-pub use wrapper::client_config_from_env;
-pub use wrapper::client_context_from_env;
+pub use config::Config;
+pub use context::Context;
+// pub use wrapper::client_config_from_env;
+// pub use wrapper::client_context_from_env;
