@@ -55,24 +55,7 @@ impl PvxsLibrary {
             })
             .expect("Failed to find symbol for Context::fromEnv");
         func()
-    }
-
-    // ?close@Context@client@pvxs@@QAEXXZ (public: void __thiscall pvxs::client::Context::close(void))
-    pub unsafe fn context_close(&self) {
-        // Dynamically load the function
-        let func: Symbol<unsafe extern "C" fn()> = self
-            .lib
-            .get(if cfg!(target_os = "windows") {
-                b"?close@Context@client@pvxs@@QAEXXZ" // Windows mangled name
-            } else if cfg!(target_os = "linux") {
-                b"_ZN4pvxs6client7Context5closeEv" // Linux mangled name
-            } else {
-                panic!("Unsupported platform");
-            })
-            .expect("Failed to find symbol for Context::close");
-    
-        func(); // Call the function
-    }    
+    }   
 }
 
 

@@ -5,6 +5,4 @@ fn main() {
         return;
     }
     println!("Context created from environment");
-    pvxs::wrapper::context_close();
-    println!("Context closed");
 }

@@ -24,17 +24,3 @@ pub fn client_context_from_env() -> *mut crate::Context {
     unsafe { lib.context_from_env() }
 }
 
-pub fn context_close() {
-    let lib = match crate::bindings::PvxsLibrary::new() {
-        Ok(lib) => lib,
-        Err(_) => {
-            eprintln!("Failed to load PVXS library");
-            return;
-        },
-    };
-
-    unsafe {
-        lib.context_close();
-    }
-}
-

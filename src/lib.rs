@@ -17,5 +17,3 @@ pub mod context;   // Client context for the wrapper
 pub use wrapper::get_version_str;
 pub use config::Config;
 pub use context::Context;
-// pub use wrapper::client_config_from_env;
-// pub use wrapper::client_context_from_env;
