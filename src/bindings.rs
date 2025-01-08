@@ -26,7 +26,7 @@ impl PvxsLibrary {
         }
     }
 
-    /// Resolve the mangled function dynamically.
+    /// Resolve the version_str using mangled name.
     pub unsafe fn version_str(&self) -> *const c_char {
         let func: Symbol<unsafe extern "C" fn() -> *const c_char> = self
             .lib
@@ -37,9 +37,25 @@ impl PvxsLibrary {
             } else {
                 panic!("Unsupported platform");
             })
-            .expect("Failed to find the mangled symbol");
+            .expect("Failed to find the mangled symbol for version_str");
 
         func()
     }
+
+    // ?fromEnv@Context@client@pvxs@@SA?AV123@XZ (public: static class pvxs::client::Context __cdecl pvxs::client::Context::fromEnv(void))
+    pub unsafe fn context_from_env(&self) -> *mut crate::Context {
+        let func: Symbol<unsafe extern "C" fn() -> *mut crate::Context> = self
+            .lib
+            .get(if cfg!(target_os = "windows") {
+                b"?fromEnv@Context@client@pvxs@@SA?AV123@XZ"
+            } else if cfg!(target_os = "linux") {
+                b"_ZN4pvxs6client7Context7fromEnvEv"
+            } else {
+                panic!("Unsupported platform");
+            })
+            .expect("Failed to find symbol for Context::fromEnv");
+        func()
+    }   
 }
+
 

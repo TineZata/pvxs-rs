@@ -15,3 +15,12 @@ pub fn get_version_str() -> String {
         }
     }
 }
+
+pub fn client_context_from_env() -> *mut crate::Context {
+    let lib = match crate::bindings::PvxsLibrary::new() {
+        Ok(lib) => lib,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    unsafe { lib.context_from_env() }
+}
+

@@ -20,8 +20,6 @@ libloading = "0.8.6"
 # Optional if using asynchronous code
 #tokio = { version = "1.0", features = ["full"] }
 
-[build-dependencies]
-
 [dev-dependencies]
 # For testing
 assert_matches = "1.5.0"  # Optional: for ergonomic test assertions
