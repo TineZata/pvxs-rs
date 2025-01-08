@@ -43,7 +43,7 @@ impl PvxsLibrary {
     }
 
     // ?fromEnv@Context@client@pvxs@@SA?AV123@XZ (public: static class pvxs::client::Context __cdecl pvxs::client::Context::fromEnv(void))
-    pub unsafe fn context_from_env(&self) -> *mut crate::Context {
+    /*pub unsafe fn context_from_env(&self) -> *mut crate::Context {
         let func: Symbol<unsafe extern "C" fn() -> *mut crate::Context> = self
             .lib
             .get(if cfg!(target_os = "windows") {
@@ -55,7 +55,7 @@ impl PvxsLibrary {
             })
             .expect("Failed to find symbol for Context::fromEnv");
         func()
-    }   
+    }*/   
 }
 
 
