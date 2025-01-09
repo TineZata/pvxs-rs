@@ -1,3 +1,5 @@
+use std::ffi::CStr;
+
 #[repr(C)]
 pub struct Version {
 
@@ -5,11 +7,12 @@ pub struct Version {
 
 impl Version {
     /// Resolve the version string from the PVXS library
-    pub unsafe fn version_str() -> *const std::os::raw::c_char {
+    pub unsafe fn version_str() -> String{
         let pvxs_library = match crate::bindings::PvxsLibrary::new() {
             Ok(lib) => lib,
-            Err(_) => return std::ptr::null_mut(),
+            Err(_) => return "version_str failed to load the PvxsLibrary".to_string(),
         };
+
         // Load the symbol for `version_str`
         let func: libloading::Symbol<unsafe extern "C" fn() -> *const std::os::raw::c_char> = 
             pvxs_library.lib
@@ -21,6 +24,11 @@ impl Version {
                 panic!("Unsupported platform");
             })
             .expect("Failed to find symbol for version_str");
-        func()
+        
+        let str_ptr = func();
+        if str_ptr.is_null() {
+            return "Unknown PVXS version".to_string();
+        }
+        CStr::from_ptr(str_ptr).to_string_lossy().into_owned()
     }
 }
