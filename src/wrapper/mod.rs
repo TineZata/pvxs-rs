@@ -1,13 +1,11 @@
 use std::ffi::CStr;
+use crate::version::Version;
+use crate::context::Context;
 
 /// Wrapper for dynamically loaded library
 pub fn get_version_str() -> String {
-    let lib = match crate::bindings::PvxsLibrary::new() {
-        Ok(lib) => lib,
-        Err(_) => return "Err: PvxsLibrary failed to load".to_string(),
-    };
     unsafe {
-        let c_str = lib.version_str();
+        let c_str = Version::version_str();
         if c_str.is_null() {
             "Unknown PVXS version".to_string()
         } else {
@@ -17,10 +15,6 @@ pub fn get_version_str() -> String {
 }
 
 pub fn client_context_from_env() -> *mut crate::Context {
-    let lib = match crate::bindings::PvxsLibrary::new() {
-        Ok(lib) => lib,
-        Err(_) => return std::ptr::null_mut(),
-    };
-    unsafe { lib.context_from_env() }
+    unsafe { Context::context_from_env() }
 }
 

@@ -18,11 +18,7 @@ fn main() {
         copy_dll_to_target(pvxs_lib_dir, com_dll_name);
         copy_dll_to_target(pvxs_lib_dir, event_core_dll_name);
     } else if cfg!(target_os = "linux") {
-        // Add Linux-specific linking or shared library handling
-        println!("cargo:rustc-link-search=native={}", pvxs_lib_dir);
-        println!("cargo:rustc-link-lib=dylib=pvxs");
-        println!("cargo:rustc-link-lib=dylib=Com");
-        println!("cargo:rustc-link-lib=dylib=event_core");
+        // Add Linux-specific library copying here
     } else {
         panic!("Unsupported platform");
     }

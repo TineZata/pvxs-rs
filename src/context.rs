@@ -1,17 +1,23 @@
-use libloading::{Library, Symbol};
+use libloading::Symbol;
+use crate::bindings::PvxsLibrary;
+use crate::getbuilder::GetBuilder;
 
+#[repr(C)]
 pub struct Context {
-    // Pointer to the underlying C++ Context object
-    context_ptr: *mut std::ffi::c_void,
-    // Reference to the dynamically loaded PVXS library
-    lib: Library,
+    // Opaque pointer which prevents direct access to the C++ object
+    context_ptr: *mut std::ffi::c_void, 
 }
 
 impl Context {
     /// Load a `Context` using the static `fromEnv()` method
-    pub unsafe fn context_from_env(lib: &Library) -> Result<Self, String> {
+    pub unsafe fn context_from_env() -> *mut crate::Context {
+        let pvxs_library = match PvxsLibrary::new() {
+            Ok(lib) => lib,
+            Err(_) => return std::ptr::null_mut(),
+        };
         // Load the symbol for `fromEnv`
-        let func: Symbol<unsafe extern "C" fn() -> *mut std::ffi::c_void> = lib
+        let func: Symbol<unsafe extern "C" fn() -> *mut std::ffi::c_void> = 
+            pvxs_library.lib
             .get(if cfg!(target_os = "windows") {
                 b"?fromEnv@Context@client@pvxs@@SA?AV123@XZ"
             } else if cfg!(target_os = "linux") {
@@ -21,31 +27,22 @@ impl Context {
             })
             .expect("Failed to find symbol for Context::fromEnv");
 
-        // Call the `fromEnv` function to get a pointer to the C++ Context
-        let context_ptr = func();
-        if context_ptr.is_null() {
-            return Err("Failed to create Context using fromEnv".to_string());
-        }
-
-        // Return the Context instance
-        Ok(Self {
-            context_ptr,
-            lib: lib.clone(),
-        })
+        func() as *mut crate::Context
     }
 
     /// Create a `GetBuilder` for retrieving type information
+    /// ?info@Context@client@pvxs@@QAE?AVGetBuilder@23@ABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z (public: class pvxs::client::GetBuilder __thiscall pvxs::client::Context::info(class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > const &))
+    /// GetBuilder Context::info(const std::string& name) { return GetBuilder{pvt, name, false}; }
     pub unsafe fn info(&self, pv_name: &str) -> Result<GetBuilder, String> {
+        let pvxs_library = match PvxsLibrary::new() {
+            Ok(lib) => lib,
+            Err(_) => return Err("GetBuilder failed to load the PVXS library".to_string()),
+        };
         // Dynamically load the `info` symbol
-        let func: libloading::Symbol<
-            unsafe extern "C" fn(
-                *mut std::ffi::c_void,
-                *const std::os::raw::c_char,
-            ) -> *mut std::ffi::c_void,
-        > = self
-            .lib
+        let func: libloading::Symbol<unsafe extern "C" fn(*mut std::ffi::c_void, *const std::os::raw::c_char,) -> *mut std::ffi::c_void,> = 
+            pvxs_library.lib
             .get(if cfg!(target_os = "windows") {
-                b"?info@Context@client@pvxs@@QAE?AVGetBuilder@23@PBD@Z"
+                b"?info@Context@client@pvxs@@QAE?AVGetBuilder@23@ABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z"
             } else if cfg!(target_os = "linux") {
                 b"_ZN5pvxs6client7Context4infoEPKc"
             } else {
@@ -63,6 +60,6 @@ impl Context {
         }
 
         // Create and return a GetBuilder instance
-        Ok(GetBuilder::new(builder_ptr, self.lib.clone()))
+        Ok(GetBuilder::new(builder_ptr))
     }
 }
