@@ -15,6 +15,7 @@ pub mod context;  // Client context for the wrapper
 pub mod pvdata; // Data structures for PV data handling
 pub mod getbuilder; // Builder pattern for getting PV data and info
 pub mod version; // Version information for the wrapper
+pub mod storetype; // Enum for PVXS storage types
 
 // Publicly expose functions or types from submodules
 pub use wrapper::get_version_str;
