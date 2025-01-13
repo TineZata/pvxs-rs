@@ -27,9 +27,9 @@ impl Context {
                 panic!("Unsupported platform");
             })
             .expect("Failed to find symbol for Context::fromEnv");
-        let temp = func();
-        dbg!(temp);      
-        func() as *mut crate::Context
+        let result = func();
+        dbg!(result);      
+        result as *mut crate::Context
     }
 
     /// Create a `GetBuilder` for retrieving type information
