@@ -10,3 +10,7 @@ pub fn client_context_from_env() -> *mut crate::Context {
     unsafe { Context::context_from_env() }
 }
 
+pub fn client_context_info(ctx: *mut crate::Context, pv_name: &str) -> Result<crate::GetBuilder, String> {
+    unsafe { (*ctx).info(pv_name) }
+}
+

@@ -2,6 +2,7 @@ use libloading::Symbol;
 use crate::bindings::PvxsLibrary;
 use crate::getbuilder::GetBuilder;
 
+#[derive(Debug)]
 #[repr(C)]
 pub struct Context {
     // Opaque pointer which prevents direct access to the C++ object
@@ -26,7 +27,8 @@ impl Context {
                 panic!("Unsupported platform");
             })
             .expect("Failed to find symbol for Context::fromEnv");
-
+        let temp = func();
+        dbg!(temp);      
         func() as *mut crate::Context
     }
 
@@ -59,6 +61,7 @@ impl Context {
             return Err("Failed to create GetBuilder for info operation".to_string());
         }
 
+        dbg!(builder_ptr);
         // Create and return a GetBuilder instance
         Ok(GetBuilder::new(builder_ptr))
     }

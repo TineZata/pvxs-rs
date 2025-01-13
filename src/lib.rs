@@ -21,3 +21,4 @@ pub mod storetype; // Enum for PVXS storage types
 pub use wrapper::get_version_str;
 pub use config::Config;
 pub use context::Context;
+pub use getbuilder::GetBuilder;

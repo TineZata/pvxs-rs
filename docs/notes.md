@@ -52,3 +52,49 @@ Run IOC on windows
 ```
 ..\..\bin\windows-x64\testPVA.exe st.cmd
 ```
+
+Example structure from 
+```
+rec:X from 172.23.238.95:5075
+struct "epics:nt/NTScalar:1.0" {
+    double value
+    struct "alarm_t" {
+        int32_t severity
+        int32_t status
+        string message
+    } alarm
+    struct {
+        int64_t secondsPastEpoch
+        int32_t nanoseconds
+        int32_t userTag
+    } timeStamp
+    struct {
+        double limitLow
+        double limitHigh
+        string description
+        string units
+        int32_t precision
+        struct "enum_t" {
+            int32_t index
+            string[] choices
+        } form
+    } display
+    struct "control_t" {
+        double limitLow
+        double limitHigh
+        double minStep
+    } control
+    struct "valueAlarm_t" {
+        bool active
+        double lowAlarmLimit
+        double lowWarningLimit
+        double highWarningLimit
+        double highAlarmLimit
+        int32_t lowAlarmSeverity
+        int32_t lowWarningSeverity
+        int32_t highWarningSeverity
+        int32_t highAlarmSeverity
+        int8_t hysteresis
+    } valueAlarm
+}
+```
