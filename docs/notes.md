@@ -47,3 +47,8 @@ structure
     double limitHigh
     double units
 ```
+
+Run IOC on windows
+```
+..\..\bin\windows-x64\testPVA.exe st.cmd
+```

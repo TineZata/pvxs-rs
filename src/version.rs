@@ -17,7 +17,7 @@ impl Version {
         let func: libloading::Symbol<unsafe extern "C" fn() -> *const std::os::raw::c_char> = 
             pvxs_library.lib
             .get(if cfg!(target_os = "windows") {
-                b"?version_str@pvxs@@YAPBDXZ"
+                b"?version_str@pvxs@@YAPEBDXZ"
             } else if cfg!(target_os = "linux") {
                 b"_ZN4pvxs11version_strEv"
             } else {

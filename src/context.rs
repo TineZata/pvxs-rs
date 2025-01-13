@@ -42,7 +42,7 @@ impl Context {
         let func: libloading::Symbol<unsafe extern "C" fn(*mut std::ffi::c_void, *const std::os::raw::c_char,) -> *mut std::ffi::c_void,> = 
             pvxs_library.lib
             .get(if cfg!(target_os = "windows") {
-                b"?info@Context@client@pvxs@@QAE?AVGetBuilder@23@ABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z"
+                b"?info@Context@client@pvxs@@QEAA?AVGetBuilder@23@AEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z"
             } else if cfg!(target_os = "linux") {
                 b"_ZN5pvxs6client7Context4infoEPKc"
             } else {

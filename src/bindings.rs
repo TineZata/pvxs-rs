@@ -19,7 +19,7 @@ impl PvxsLibrary {
         unsafe {
             match Library::new(lib_name) {
                 Ok(lib) => Ok(Self { lib }),
-                Err(err) => Err(format!("Failed to load binary '{}': {}", lib_name, err)),
+                Err(err) => Err(format!("bindings:: Failed to load binary '{}': {}", lib_name, err)),
             }
         }
     }
