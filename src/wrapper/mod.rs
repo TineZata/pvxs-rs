@@ -1,9 +1,18 @@
 use crate::version::Version;
 use crate::context::Context;
+use crate::config::Config;
 
 /// Wrapper for dynamically loaded library
 pub fn get_version_str() -> String {
     unsafe { Version::version_str() }
+}
+
+pub fn client_config_build() -> *mut crate::Context {
+    unsafe { 
+        // Return struct literal for Config, which creates a new context
+        // using the current configuration
+        Config::new().client_config_build() 
+    }
 }
 
 pub fn client_context_from_env() -> *mut crate::Context {

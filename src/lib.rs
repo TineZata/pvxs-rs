@@ -19,6 +19,7 @@ pub mod storetype; // Enum for PVXS storage types
 
 // Publicly expose functions or types from submodules
 pub use wrapper::get_version_str;
+pub use wrapper::client_config_build;
 pub use config::Config;
 pub use context::Context;
 pub use getbuilder::GetBuilder;

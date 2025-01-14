@@ -6,6 +6,13 @@ fn test_pvxs_version() {
 }
 
 #[test]
+fn test_pvxs_client_config_build() {
+    let ctx = pvxs::client_config_build();
+    dbg!("Context:", ctx);
+    assert!(!ctx.is_null(), "Failed to create context from configuration");
+}
+
+#[test]
 fn test_pvxs_client_context_from_env() {
     let ctx: *mut pvxs::Context = pvxs::wrapper::client_context_from_env();
     assert!(!ctx.is_null(), "Failed to create context from environment");
