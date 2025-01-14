@@ -1,14 +1,13 @@
 use libloading::Symbol;
 use crate::bindings::PvxsLibrary;
-use crate::getbuilder::GetBuilder;
-use crate::std_shared_ptr::std_shared_ptr;
-
+//use crate::getbuilder::GetBuilder;
+use crate::std_shared_ptr::StdSharedPtr;
 
 #[doc = " An independent PVA protocol client instance\n\n  Typically created with Config::build()\n\n  @code\n  Context ctxt(Config::from_env().build());\n  @endcode"]
 #[repr(C)]
 #[derive(Debug)]
 pub struct ClientContext {
-    pub pvt: std_shared_ptr,
+    pub pvt: StdSharedPtr,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -21,7 +20,7 @@ impl ClientContext {
     pub unsafe fn context_from_env() -> *mut crate::ClientContext {
         let pvxs_library = match PvxsLibrary::new() {
             Ok(lib) => lib,
-            Err(_) => return std::ptr::null_mut(),
+            Err(_) => return std::ptr::null_mut() as *mut crate::ClientContext,
         };
         // Load the symbol for `fromEnv`
         let func: Symbol<unsafe extern "C" fn() -> *mut std::ffi::c_void> = 
@@ -39,6 +38,7 @@ impl ClientContext {
         result as *mut crate::ClientContext
     }
 
+    /*
     /// Create a `GetBuilder` for retrieving type information
     /// ?info@Context@client@pvxs@@QAE?AVGetBuilder@23@ABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z (public: class pvxs::client::GetBuilder __thiscall pvxs::client::Context::info(class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > const &))
     /// GetBuilder Context::info(const std::string& name) { return GetBuilder{pvt, name, false}; }
@@ -71,5 +71,5 @@ impl ClientContext {
         dbg!(builder_ptr);
         // Create and return a GetBuilder instance
         Ok(GetBuilder::new(builder_ptr))
-    }
+    }*/
 }

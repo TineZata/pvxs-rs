@@ -56,6 +56,7 @@ impl Config {
         }
     }
 
+    /*
     /// Create a new client context using the current configuration.
     /// 
     /// Original signature: ?build@Config@client@pvxs@@QEBA?AVContext@23@XZ (public: class pvxs::client::Context __thiscall pvxs::client::Config::build(void)const )
@@ -87,4 +88,5 @@ impl Config {
         dbg!("Func result:", result);      
         result as *mut crate::Context
     }
+    */
 }
