@@ -1,17 +1,24 @@
 use libloading::Symbol;
 use crate::bindings::PvxsLibrary;
 use crate::getbuilder::GetBuilder;
+use crate::std_shared_ptr::std_shared_ptr;
 
-#[derive(Debug)]
+
+#[doc = " An independent PVA protocol client instance\n\n  Typically created with Config::build()\n\n  @code\n  Context ctxt(Config::from_env().build());\n  @endcode"]
 #[repr(C)]
-pub struct Context {
-    // Opaque pointer which prevents direct access to the C++ object
-    context_ptr: *mut std::ffi::c_void, 
+#[derive(Debug)]
+pub struct ClientContext {
+    pub pvt: std_shared_ptr,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ClientContext_Pvt {
+    _unused: [u8; 0],
 }
 
-impl Context {
+impl ClientContext {
     /// Load a `Context` using the static `fromEnv()` method
-    pub unsafe fn context_from_env() -> *mut crate::Context {
+    pub unsafe fn context_from_env() -> *mut crate::ClientContext {
         let pvxs_library = match PvxsLibrary::new() {
             Ok(lib) => lib,
             Err(_) => return std::ptr::null_mut(),
@@ -29,7 +36,7 @@ impl Context {
             .expect("Failed to find symbol for Context::fromEnv");
         let result = func();
         dbg!(result);      
-        result as *mut crate::Context
+        result as *mut crate::ClientContext
     }
 
     /// Create a `GetBuilder` for retrieving type information
@@ -56,7 +63,7 @@ impl Context {
         let c_pv_name = std::ffi::CString::new(pv_name).unwrap();
 
         // Call the `info` method on the Context object
-        let builder_ptr = func(self.context_ptr, c_pv_name.as_ptr());
+        let builder_ptr = func(self.pvt.as_ptr(), c_pv_name.as_ptr());
         if builder_ptr.is_null() {
             return Err("Failed to create GetBuilder for info operation".to_string());
         }

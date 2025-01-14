@@ -11,15 +11,17 @@
 pub mod bindings; // Raw bindings to the PVXS library
 pub mod wrapper;  // High-level abstractions over the bindings
 pub mod config;   // Configuration settings for the wrapper
-pub mod context;  // Client context for the wrapper
+pub mod client_context;  // Client context for the wrapper
 pub mod pvdata; // Data structures for PV data handling
 pub mod getbuilder; // Builder pattern for getting PV data and info
 pub mod version; // Version information for the wrapper
 pub mod storetype; // Enum for PVXS storage types
+pub mod std_shared_ptr; // Wrapper for std::shared_ptr
 
 // Publicly expose functions or types from submodules
 pub use wrapper::get_version_str;
 pub use wrapper::client_config_build;
 pub use config::Config;
-pub use context::Context;
+pub use client_context::ClientContext;
 pub use getbuilder::GetBuilder;
+
