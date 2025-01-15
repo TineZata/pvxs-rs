@@ -8,7 +8,7 @@
 //!
 
 // Re-export modules
-pub mod bindings; // Raw bindings to the PVXS library
+pub mod pvxs_library; // Raw bindings to the PVXS library
 pub mod wrapper;  // High-level abstractions over the bindings
 //pub mod config;   // Configuration settings for the wrapper
 pub mod client_context;  // Client context for the wrapper

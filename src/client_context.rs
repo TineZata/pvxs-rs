@@ -1,5 +1,5 @@
 use libloading::Symbol;
-use crate::bindings::PvxsLibrary;
+use crate::pvxs_library::PvxsLibrary;
 //use crate::getbuilder::GetBuilder;
 use crate::std_shared_ptr::StdSharedPtr;
 
@@ -11,7 +11,7 @@ pub struct ClientContext {
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
-pub struct ClientContext_Pvt {
+pub struct ClientContextPvt {
     _unused: [u8; 0],
 }
 

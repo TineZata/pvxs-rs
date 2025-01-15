@@ -8,7 +8,7 @@ pub struct Version {
 impl Version {
     /// Resolve the version string from the PVXS library
     pub unsafe fn version_str() -> String{
-        let pvxs_library = match crate::bindings::PvxsLibrary::new() {
+        let pvxs_library = match crate::pvxs_library::PvxsLibrary::new() {
             Ok(lib) => lib,
             Err(_) => return "version_str failed to load the PvxsLibrary".to_string(),
         };
