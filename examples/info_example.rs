@@ -1,3 +1,6 @@
+use pvxs::pvxs_library::PvxsLibrary;
+use pvxs::client_context::ClientContext;
+
 ///
 /// This example demonstrates how to get the information of a PV from the server.
 /// Create an IOC which has this record:
@@ -15,7 +18,13 @@
 /// ```
 /// 
 fn main() {
-    let ctx: *mut pvxs::Context = pvxs::wrapper::client_context_from_env();
+
+    let pvxs_library: PvxsLibrary = match PvxsLibrary::new() {
+        Ok(lib) => lib,
+        Err(_) => panic!("Failed to load the PvxsLibrary"),
+    };
+
+    /*let ctx: *mut ClientContext = ClientContext::context_from_env();
     if ctx.is_null() {
         println!("Failed to create context from environment");
         return;
@@ -24,5 +33,5 @@ fn main() {
         let pv_name = "rec:X";
         let info: Result<pvxs::GetBuilder, String> = pvxs::wrapper::client_context_info(ctx, pv_name);
     }
-    println!("Context created from environment");
+    println!("Context created from environment");*/
 }

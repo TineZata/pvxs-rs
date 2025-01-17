@@ -1,4 +1,3 @@
-use std::sync::{Arc, Mutex};
 use libloading::{Library, Symbol};
 
 pub struct PvxsLibrary {
@@ -33,6 +32,7 @@ impl PvxsLibrary {
     }
 }
 
+/*
 pub struct PvxsLibraryManager {
     library: Arc<Mutex<Option<PvxsLibrary>>>,
 }
@@ -78,3 +78,4 @@ impl PvxsLibraryManager {
         }
     }   
 }
+    */

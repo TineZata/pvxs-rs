@@ -1,5 +1,7 @@
 use std::ffi::CStr;
 
+use crate::pvxs_library::PvxsLibrary;
+
 #[repr(C)]
 pub struct Version {
 
@@ -7,11 +9,11 @@ pub struct Version {
 
 impl Version {
     /// Resolve the version string from the PVXS library
-    pub unsafe fn version_str() -> String{
-        let pvxs_library = match crate::pvxs_library::PvxsLibrary::new() {
+    pub unsafe fn version_str(pvxs_library: PvxsLibrary) -> String{
+        /*let pvxs_library = match crate::pvxs_library::PvxsLibrary::new() {
             Ok(lib) => lib,
             Err(_) => return "version_str failed to load the PvxsLibrary".to_string(),
-        };
+        };*/
 
         // Load the symbol for `version_str`
         let func: libloading::Symbol<unsafe extern "C" fn() -> *const std::os::raw::c_char> = 

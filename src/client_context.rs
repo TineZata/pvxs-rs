@@ -1,3 +1,6 @@
+use std::ffi::c_void;
+use std::sync::Arc;
+use libloading::os::windows::Library;
 use libloading::Symbol;
 use crate::pvxs_library::PvxsLibrary;
 //use crate::getbuilder::GetBuilder;
@@ -17,11 +20,7 @@ pub struct ClientContextPvt {
 
 impl ClientContext {
     /// Load a `Context` using the static `fromEnv()` method
-    pub unsafe fn context_from_env() -> *mut crate::ClientContext {
-        let pvxs_library = match PvxsLibrary::new() {
-            Ok(lib) => lib,
-            Err(_) => return std::ptr::null_mut() as *mut crate::ClientContext,
-        };
+    pub unsafe fn context_from_env(pvxs_library: Arc<PvxsLibrary>) -> *mut c_void {
         // Load the symbol for `fromEnv`
         let func: Symbol<unsafe extern "C" fn() -> *mut std::ffi::c_void> = 
             pvxs_library.lib
@@ -33,9 +32,7 @@ impl ClientContext {
                 panic!("Unsupported platform");
             })
             .expect("Failed to find symbol for Context::fromEnv");
-        let result = func();
-        dbg!(result);      
-        result as *mut crate::ClientContext
+        func()
     }
 
     /*
