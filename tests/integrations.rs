@@ -26,13 +26,19 @@ fn test_pvxs_client_config_build() {
     */
 #[test]
 fn test_pvxs_client_context_from_env() {
-    // Arc ensure that the PvxsLibrary is shared between threads and cleaned up when the last reference is dropped
     unsafe {
-        let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
-        let ctx_raw: *mut c_void =  ClientContext::context_from_env(Arc::clone(&pvxs_library));
+        let ctx_raw = {
+            // Arc ensure that the PvxsLibrary is shared between threads and cleaned up when the last reference is dropped
+            
+            let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
+            let ctx_raw: *mut c_void =  ClientContext::context_from_env(Arc::clone(&pvxs_library));
+            println!("Context: {:?}", ctx_raw);
+            assert!(!ctx_raw.is_null(), "Failed to create context from environment");
+            ctx_raw
+        };
+
         println!("Context: {:?}", ctx_raw);
-        assert!(!ctx_raw.is_null(), "Failed to create context from environment");
-    };
+    }
 }
 
 
