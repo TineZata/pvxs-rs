@@ -13,6 +13,7 @@ pub mod version; // Version information for the wrapper
 pub mod storetype; // Enum for PVXS storage types
 pub mod std_shared_ptr; // Shared pointer for PVXS objects
 pub mod client; // Client context for PVXS
+pub mod client_config; // Client configuration for PVXS
 
 // Publicly expose functions or types from submodules
 
