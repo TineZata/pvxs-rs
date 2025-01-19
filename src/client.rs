@@ -5,12 +5,12 @@ use crate::pvxs_library::PvxsLibrary;
 
 #[doc = " An independent PVA protocol client instance\n\n  Typically created with Config::build()\n\n  @code\n  Context ctxt(Config::from_env().build());\n  @endcode"]
 #[repr(C)]
-pub struct ClientContext {
+pub struct Context {
 }
 
-impl ClientContext {
+impl Context {
     /// Load a `Context` using the static `fromEnv()` method
-    pub unsafe fn context_from_env(pvxs_library: Arc<PvxsLibrary>) -> *mut c_void {
+    pub unsafe fn from_env(pvxs_library: Arc<PvxsLibrary>) -> *mut c_void {
         // Load the symbol for `fromEnv`
         let func: Symbol<unsafe extern "C" fn() -> *mut std::ffi::c_void> = 
             pvxs_library.lib
