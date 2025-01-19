@@ -1,8 +1,8 @@
 fn main() {
-    let ctx: *mut pvxs::Context = pvxs::wrapper::client_context_from_env();
+    /*let ctx: *mut pvxs::Context = pvxs::wrapper::client_context_from_env();
     if ctx.is_null() {
         println!("Failed to create context from environment");
         return;
     }
-    println!("Context created from environment");
+    println!("Context created from environment");*/
 }

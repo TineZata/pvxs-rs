@@ -1,5 +1,5 @@
-use pvxs::pvxs_library::PvxsLibrary;
-use pvxs::client_context::ClientContext;
+//use pvxs::pvxs_library::PvxsLibrary;
+//use pvxs::client_context::ClientContext;
 
 ///
 /// This example demonstrates how to get the information of a PV from the server.
@@ -19,10 +19,10 @@ use pvxs::client_context::ClientContext;
 /// 
 fn main() {
 
-    let pvxs_library: PvxsLibrary = match PvxsLibrary::new() {
+    /*let pvxs_library: PvxsLibrary = match PvxsLibrary::new() {
         Ok(lib) => lib,
         Err(_) => panic!("Failed to load the PvxsLibrary"),
-    };
+    };*/
 
     /*let ctx: *mut ClientContext = ClientContext::context_from_env();
     if ctx.is_null() {

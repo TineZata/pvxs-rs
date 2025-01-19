@@ -1,21 +1,11 @@
 use std::ffi::c_void;
 use std::sync::Arc;
-use libloading::os::windows::Library;
 use libloading::Symbol;
 use crate::pvxs_library::PvxsLibrary;
-//use crate::getbuilder::GetBuilder;
-use crate::std_shared_ptr::StdSharedPtr;
 
 #[doc = " An independent PVA protocol client instance\n\n  Typically created with Config::build()\n\n  @code\n  Context ctxt(Config::from_env().build());\n  @endcode"]
 #[repr(C)]
-#[derive(Debug)]
 pub struct ClientContext {
-    pub pvt: StdSharedPtr,
-}
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct ClientContextPvt {
-    _unused: [u8; 0],
 }
 
 impl ClientContext {
@@ -34,39 +24,4 @@ impl ClientContext {
             .expect("Failed to find symbol for Context::fromEnv");
         func()
     }
-
-    /*
-    /// Create a `GetBuilder` for retrieving type information
-    /// ?info@Context@client@pvxs@@QAE?AVGetBuilder@23@ABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z (public: class pvxs::client::GetBuilder __thiscall pvxs::client::Context::info(class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > const &))
-    /// GetBuilder Context::info(const std::string& name) { return GetBuilder{pvt, name, false}; }
-    pub unsafe fn info(&self, pv_name: &str) -> Result<GetBuilder, String> {
-        let pvxs_library = match PvxsLibrary::new() {
-            Ok(lib) => lib,
-            Err(_) => return Err("GetBuilder failed to load the PVXS library".to_string()),
-        };
-        // Dynamically load the `info` symbol
-        let func: libloading::Symbol<unsafe extern "C" fn(*mut std::ffi::c_void, *const std::os::raw::c_char,) -> *mut std::ffi::c_void,> = 
-            pvxs_library.lib
-            .get(if cfg!(target_os = "windows") {
-                b"?info@Context@client@pvxs@@QEAA?AVGetBuilder@23@AEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z"
-            } else if cfg!(target_os = "linux") {
-                b"_ZN5pvxs6client7Context4infoEPKc"
-            } else {
-                panic!("Unsupported platform");
-            })
-            .expect("Failed to find the symbol for Context::info");
-
-        // Prepare the PV name
-        let c_pv_name = std::ffi::CString::new(pv_name).unwrap();
-
-        // Call the `info` method on the Context object
-        let builder_ptr = func(self.pvt.as_ptr(), c_pv_name.as_ptr());
-        if builder_ptr.is_null() {
-            return Err("Failed to create GetBuilder for info operation".to_string());
-        }
-
-        dbg!(builder_ptr);
-        // Create and return a GetBuilder instance
-        Ok(GetBuilder::new(builder_ptr))
-    }*/
 }
