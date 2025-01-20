@@ -1,6 +1,7 @@
 use std::sync::Arc;
+//use pvxs::client_config::ClientConfig;
 use pvxs::pvxs_library::PvxsLibrary;
-use pvxs::std_shared_ptr::StdSharedPtr;
+//use pvxs::std_shared_ptr::StdSharedPtr;
 use pvxs::version::Version;
 use pvxs::client::Context;
 
@@ -18,10 +19,13 @@ fn test_pvxs_version() {
 #[test]
 fn test_pvxs_client_context_from_env() {
     unsafe {
-        let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
-        let ctx: Context = Context::from_env(Arc::clone(&pvxs_library));
-        assert!(!ctx.pvt._base._ptr.is_null(), "Failed to create context from environment");
-        dbg!(ctx);
+        let ctx = {
+            let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
+            let ctx: Context = Context::from_env(Arc::clone(&pvxs_library));
+            assert!(!ctx.pvt._base._ptr.is_null(), "Context base pointer should not be null");    
+            ctx
+        };
+        //dbg!(ctx);
     }
 }
 
@@ -31,9 +35,10 @@ fn test_pvxs_client_context_config() {
         let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
         let ctx: Context = Context::from_env(Arc::clone(&pvxs_library));
         assert!(!ctx.pvt._base._ptr.is_null(), "Failed to create context from environment");
-        let config: = Context::config(&ctx, Arc::clone(&pvxs_library));
-        assert!(&config > 0, "UDP port should be greater than 0");
-        dbg!(config);
+        let config = Context::config(&ctx, Arc::clone(&pvxs_library));
+        let config_obj = &*config;
+        assert!(config_obj.udp_port > 0, "UDP port should be greater than 0");
+        dbg!(config_obj);
     }
 }
 
