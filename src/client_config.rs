@@ -21,8 +21,10 @@ pub struct ClientConfig {
     pub auto_addr_list: bool,
     #[doc = "! Inactivity timeout interval for TCP connections.  (seconds)\n! @since 0.2.0"]
     pub tcp_timeout: f64,
-    pub be: bool,
-    pub udp: bool,
+    #[doc = "Private field: Big endian flag"]
+    _be: bool,
+    #[doc = "Private field: UDP flag"]
+    _udp: bool,
 }
 
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
@@ -44,7 +46,7 @@ const _: () = {
     ["Offset of field: pvxs_client_Config::tcpTimeout"]
         [::std::mem::offset_of!(ClientConfig, tcp_timeout) - 80usize];
     ["Offset of field: pvxs_client_Config::BE"]
-        [::std::mem::offset_of!(ClientConfig, be) - 88usize];
+        [::std::mem::offset_of!(ClientConfig, _be) - 88usize];
     ["Offset of field: pvxs_client_Config::UDP"]
-        [::std::mem::offset_of!(ClientConfig, udp) - 89usize];
+        [::std::mem::offset_of!(ClientConfig, _udp) - 89usize];
 };

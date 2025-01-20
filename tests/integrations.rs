@@ -19,11 +19,21 @@ fn test_pvxs_version() {
 fn test_pvxs_client_context_from_env() {
     unsafe {
         let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
-        let shared_ptr: *mut StdSharedPtr = Context::from_env(Arc::clone(&pvxs_library)) as *mut StdSharedPtr;
-        assert!(!shared_ptr.is_null(), "Failed to create context from environment");
-        dbg!(shared_ptr);
+        let ctx: Context = Context::from_env(Arc::clone(&pvxs_library));
+        assert!(!ctx.pvt._base._ptr.is_null(), "Failed to create context from environment");
+        dbg!(ctx);
     }
 }
 
-
+#[test]
+fn test_pvxs_client_context_config() {
+    unsafe {
+        let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
+        let ctx: Context = Context::from_env(Arc::clone(&pvxs_library));
+        assert!(!ctx.pvt._base._ptr.is_null(), "Failed to create context from environment");
+        let config: = Context::config(&ctx, Arc::clone(&pvxs_library));
+        assert!(&config > 0, "UDP port should be greater than 0");
+        dbg!(config);
+    }
+}
 
