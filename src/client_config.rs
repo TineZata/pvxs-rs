@@ -1,7 +1,7 @@
 #[repr(C)]
 #[derive(Debug)]
 pub struct StdVector {
-    pub _mypair: Vec<u8>,
+    pub _mypair: Vec<String>,
 }
 
 #[repr(C)]

@@ -37,8 +37,8 @@ fn test_pvxs_client_context_config() {
         assert!(!ctx.pvt._base._ptr.is_null(), "Failed to create context from environment");
         let config = Context::config(&ctx, Arc::clone(&pvxs_library));
         let config_obj = &*config;
-        assert!(config_obj.udp_port > 0, "UDP port should be greater than 0");
-        dbg!(config_obj);
+        assert_eq!(config_obj.udp_port, 5076, "UDP port should be default 5076");
+        //dbg!(config_obj);
     }
 }
 
