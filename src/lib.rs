@@ -10,7 +10,6 @@
 // Re-export modules
 pub mod pvxs_library; // Raw bindings to the PVXS library
 pub mod version; // Version information for the wrapper
-pub mod storetype; // Enum for PVXS storage types
 pub mod std_types; // Standard types for PVXS
 pub mod client; // Client context for PVXS
 pub mod wrapper; // Wrapper for the PVXS library

@@ -16,5 +16,4 @@ fn main() {
     println!("TCP port: {}", config.tcp_port);
     println!("TCP timeout: {}", config.tcp_timeout);
     println!("Auto address list: {}", if config.auto_addr_list { "true" } else { "false" });
-
 }
