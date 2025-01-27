@@ -8,12 +8,21 @@
 //!
 
 // Re-export modules
-pub mod bindings; // Raw bindings to the PVXS library
-pub mod wrapper;  // High-level abstractions over the bindings
-pub mod config;   // Configuration settings for the wrapper
-pub mod context;   // Client context for the wrapper
+pub mod pvxs_library; // Raw bindings to the PVXS library
+pub mod version; // Version information for the wrapper
+pub mod std_types; // Standard types for PVXS
+pub mod client; // Client context for PVXS
+pub mod wrapper; // Wrapper for the PVXS library
 
-// Publicly expose functions or types from submodules
-pub use wrapper::get_version_str;
-pub use config::Config;
-pub use context::Context;
+
+// Publicly exposed functions or types from submodules
+pub use client::{
+    Context,
+    Config,
+};
+pub use wrapper::{
+    get_version_str,
+    get_context_from_env,
+    get_context_config,
+};
+

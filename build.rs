@@ -5,25 +5,28 @@ use std::path::{Path, PathBuf};
 fn main() {
     // Debug: Notify that build.rs has started
     eprintln!("Running build.rs");
-
     // Define the paths to PVXS headers and libraries
-    let pvxs_lib_dir = "third_party/lib";
-    let pvxs_dll_name = "pvxs.dll"; // Windows-specific
-    let com_dll_name = "Com.dll";   // Windows-specific
-    let event_core_dll_name = "event_core.dll"; // Windows-specific
-
+    // If target os is windows 64 bit, use the windows_x64 directory
+    let pvxs_lib_dir: &str;   
     if cfg!(target_os = "windows") {
+        if cfg!(target_pointer_width = "64") {
+            pvxs_lib_dir = "third_party/lib/windows_x64";
+        } else if cfg!(target_pointer_width = "32") {
+            pvxs_lib_dir = "third_party/lib/win32_x86";
+        } else {
+            panic!("Unsupported platform");
+        }
+        let pvxs_dll_name = "pvxs.dll"; // Windows-specific
+        let com_dll_name = "Com.dll";   // Windows-specific
+        let event_core_dll_name = "event_core.dll"; // Windows-specific
         // Copy DLLs for Windows
         copy_dll_to_target(pvxs_lib_dir, pvxs_dll_name);
         copy_dll_to_target(pvxs_lib_dir, com_dll_name);
         copy_dll_to_target(pvxs_lib_dir, event_core_dll_name);
     } else if cfg!(target_os = "linux") {
-        // Add Linux-specific linking or shared library handling
-        println!("cargo:rustc-link-search=native={}", pvxs_lib_dir);
-        println!("cargo:rustc-link-lib=dylib=pvxs");
-        println!("cargo:rustc-link-lib=dylib=Com");
-        println!("cargo:rustc-link-lib=dylib=event_core");
-    } else {
+        panic!("Linux is not supported yet");
+    }
+    else {
         panic!("Unsupported platform");
     }
 }
