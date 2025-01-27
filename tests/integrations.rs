@@ -1,12 +1,11 @@
 use std::sync::Arc;
-//use pvxs::client_config::ClientConfig;
 use pvxs::pvxs_library::PvxsLibrary;
 //use pvxs::std_shared_ptr::StdSharedPtr;
 use pvxs::version::Version;
-use pvxs::client::Context;
+use pvxs::client::{Context, Config};
 
 #[test]
-fn test_pvxs_version() {
+fn test1_pvxs_version() {
     let pvxs_library: PvxsLibrary = match PvxsLibrary::new() {
         Ok(lib) => lib,
         Err(_) => panic!("Failed to load the PvxsLibrary"),
@@ -17,28 +16,25 @@ fn test_pvxs_version() {
 }
 
 #[test]
-fn test_pvxs_client_context_from_env() {
-    unsafe {
-        let ctx = {
-            let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
-            let ctx: Context = Context::from_env(Arc::clone(&pvxs_library));
-            assert!(!ctx.pvt._base._ptr.is_null(), "Context base pointer should not be null");    
-            ctx
-        };
-        //dbg!(ctx);
-    }
+fn test2_pvxs_client_context_from_env() {
+    let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
+    // Create a context
+    let ctx: Context = unsafe { Context::from_env(Arc::clone(&pvxs_library)) };
+    // Assert that the shared pointer is valid
+    assert!(!ctx._private._base._ptr.is_null(), "Context pointer should be valid");
+    dbg!(ctx);
 }
 
 #[test]
-fn test_pvxs_client_context_config() {
-    unsafe {
-        let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
-        let ctx: Context = Context::from_env(Arc::clone(&pvxs_library));
-        assert!(!ctx.pvt._base._ptr.is_null(), "Failed to create context from environment");
-        let config = Context::config(&ctx, Arc::clone(&pvxs_library));
-        let config_obj = &*config;
-        assert_eq!(config_obj.udp_port, 5076, "UDP port should be default 5076");
-        //dbg!(config_obj);
-    }
+fn test3_pvxs_client_context_config() {
+    let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
+    let ctx: Context = unsafe { Context::from_env(Arc::clone(&pvxs_library)) };
+    assert!(!ctx._private._base._ptr.is_null(), "Failed to create context from environment");
+    let config: *const Config = unsafe { Context::config(&ctx, Arc::clone(&pvxs_library)) };
+    let config_obj: &Config = unsafe { &*config };
+    assert_eq!(config_obj.udp_port, 5076, "UDP port should be default 5076");
+    assert_eq!(config_obj.tcp_port, 5075, "TCP port should be default 5075");
+    assert_eq!(config_obj.tcp_timeout, 40.0, "TCP timeout should be default 40.0s");
+    dbg!(config_obj);
 }
 
