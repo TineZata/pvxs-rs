@@ -1,4 +1,4 @@
-use std::ffi::CStr;
+use std::{ffi::CStr, sync::Arc};
 use crate::pvxs_library::PvxsLibrary;
 
 #[repr(C)]
@@ -7,7 +7,7 @@ pub struct Version {
 
 impl Version {
     /// Resolve the version string from the PVXS library
-    pub unsafe fn version_str(pvxs_library: PvxsLibrary) -> String{
+    pub unsafe fn version_str(pvxs_library: Arc<PvxsLibrary>) -> String{
         // Load the symbol for `version_str`
         let func: libloading::Symbol<unsafe extern "C" fn() -> *const std::os::raw::c_char> = 
             pvxs_library.lib

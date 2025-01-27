@@ -1,15 +1,11 @@
 use std::sync::Arc;
 use pvxs::pvxs_library::PvxsLibrary;
-//use pvxs::std_shared_ptr::StdSharedPtr;
 use pvxs::version::Version;
 use pvxs::client::{Context, Config};
 
 #[test]
 fn test1_pvxs_version() {
-    let pvxs_library: PvxsLibrary = match PvxsLibrary::new() {
-        Ok(lib) => lib,
-        Err(_) => panic!("Failed to load the PvxsLibrary"),
-    };
+    let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
     let version = unsafe { Version::version_str(pvxs_library) };
     assert!(!version.is_empty(), "Version string should not be empty");
     dbg!(version);

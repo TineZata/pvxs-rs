@@ -13,7 +13,17 @@ pub mod version; // Version information for the wrapper
 pub mod storetype; // Enum for PVXS storage types
 pub mod std_types; // Standard types for PVXS
 pub mod client; // Client context for PVXS
+pub mod wrapper; // Wrapper for the PVXS library
 
-// Publicly expose functions or types from submodules
 
+// Publicly exposed functions or types from submodules
+pub use client::{
+    Context,
+    Config,
+};
+pub use wrapper::{
+    get_version_str,
+    get_context_from_env,
+    get_context_config,
+};
 

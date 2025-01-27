@@ -1,28 +1,67 @@
+use std::sync::Arc;
 use crate::version::Version;
-use crate::ClientContext;
-//use crate::config::Config;
+use crate::pvxs_library::PvxsLibrary;
+use crate::client::{Context, Config};
 
-/// Wrapper for dynamically loaded library
-/*pub fn get_version_str() -> String {
-    unsafe { Version::version_str() }
-}*/
-
-/*
-pub fn client_config_build() -> *mut ClientContext {
-    unsafe { 
-        // Return struct literal for Config, which creates a new context
-        // using the current configuration
-        Config::new().client_config_build() 
+/// Returns the version of the PVXS library as a string.
+/// 
+/// Example:
+/// ```rust 
+/// let version: String = pvxs::get_version_str();
+/// println!("PVXS Version: {}", version);
+/// ```
+pub fn get_version_str() -> String {
+    let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
+    let version = unsafe { Version::version_str(pvxs_library) };
+    if version.is_empty(){
+         "Version string should not be empty".to_string()
+    }else {
+        version
     }
 }
-*/
-/*pub fn client_context_from_env() -> *mut ClientContext {
-    unsafe { ClientContext::context_from_env() }
-}*/
 
-/*
-pub fn client_context_info(ctx: *mut ClientContext, pv_name: &str) -> Result<crate::GetBuilder, String> {
-    unsafe { (*ctx).info(pv_name) }
+/// Returns a new context created from the environment.
+/// 
+/// Example:
+/// ```rust
+/// let ctx: Context = pvxs::get_context_from_env();
+/// if ctx._private._base._ptr.is_null() {
+///    println!("Failed to create context from environment");
+///   return;
+/// }
+/// println!("Context created from environment");
+/// dbg!(ctx);
+/// ```
+///
+pub fn get_context_from_env() -> Context {
+    let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
+    unsafe { Context::from_env(Arc::clone(&pvxs_library)) }
 }
-    */
 
+/// Return default configuration for the context.
+/// 
+/// Example:
+/// ```rust
+/// let config: Config = pvxs::get_context_config();
+/// if config.udp_port != 5076 {
+///    println!("UDP port should be default 5076");
+///   return;
+/// }
+/// if config.tcp_port != 5075 {
+///   println!("TCP port should be default 5075");
+///  return;
+/// }
+/// if config.tcp_timeout != 40.0 {
+///   println!("TCP timeout should be default 40.0s");
+/// return;
+/// }
+/// dbg!(config);
+/// ```
+/// 
+pub fn get_context_config() -> Config {
+    let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
+    let ctx: Context = unsafe { Context::from_env(Arc::clone(&pvxs_library)) };
+    let config: *const Config = unsafe { Context::config(&ctx, Arc::clone(&pvxs_library)) };
+    let config_obj: &Config = unsafe { &*config };
+    config_obj.clone()
+}
