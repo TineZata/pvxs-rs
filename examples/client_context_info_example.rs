@@ -1,14 +1,6 @@
-use pvxs::client::{Context, Config};
+use pvxs::client::Config;
 
 fn main() {
-    let ctx: Context = pvxs::get_context_from_env();
-    if ctx._private._base._ptr.is_null() {
-        println!("Failed to create context from environment");
-        return;
-    }
-    println!("Context created from environment");
-    //dbg!(ctx);
-
     let config: Config = pvxs::get_context_config();
 
     let addr = unsafe { config.address_list.to_rust_string() };

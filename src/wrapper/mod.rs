@@ -5,11 +5,14 @@ use crate::client::{Context, Config};
 
 /// Returns the version of the PVXS library as a string.
 /// 
-/// Example:
-/// ```rust 
+/// ## Example:
+/// ```rust
+/// use pvxs::version::get_version_str;
+/// 
 /// let version: String = pvxs::get_version_str();
 /// println!("PVXS Version: {}", version);
 /// ```
+/// 
 pub fn get_version_str() -> String {
     let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
     let version = unsafe { Version::version_str(pvxs_library) };
@@ -22,8 +25,10 @@ pub fn get_version_str() -> String {
 
 /// Returns a new context created from the environment.
 /// 
-/// Example:
+/// ## Example:
 /// ```rust
+/// use pvxs::client::Context;
+/// 
 /// let ctx: Context = pvxs::get_context_from_env();
 /// if ctx._private._base._ptr.is_null() {
 ///     println!("Failed to create context from environment");
@@ -40,8 +45,10 @@ pub fn get_context_from_env() -> Context {
 
 /// Return default configuration for the context.
 /// 
-/// Example:
+/// ## Example:
 /// ```rust
+/// use pvxs::client::Config;
+/// 
 /// let config: Config = pvxs::get_context_config();
 /// let addr = unsafe { config.address_list.to_rust_string() };
 /// println!("Address list: {}", addr);
