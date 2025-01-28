@@ -27,46 +27,56 @@ pub const STD_BASIC_STRING_CONSTRUCT_STRATEGY_FROM_CHAR: StdBasicStringConstruct
 pub const STD_BASIC_STRING_CONSTRUCT_STRATEGY_FROM_PTR: StdBasicStringConstructStrategy = 0;
 pub const STD_BASIC_STRING_CONSTRUCT_STRATEGY_FROM_STRING: StdBasicStringConstructStrategy = 0;
 pub type StdBasicStringConstructStrategy = ::std::os::raw::c_uchar;
+
+#[repr(C)]
+pub union StdStringData {
+    /// Capacity of the allocated buffer
+    /// 
+    /// Note:
+    ///     Don't rely on this value to be the capacity of the string.
+    ///     Always use `to_rust_string` to convert to a Rust `String`.
+    pub capacity: usize,
+    /// Buffer for small string optimization
+    pub sso_buffer: [u8; 16],
+}
+
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct StdString {
-    pub data: *const u8,  // Pointer to the character data
+    /// Pointer to the start of string data
+    pub begin: *const u8,  
     /// Size of the string
     /// 
     /// Note:  
     ///     Don't rely on this value to be the length of the string.
     ///     Always use `to_rust_string` to convert to a Rust `String`.
     pub size: usize,
-    /// Capacity of the allocated buffer
-    /// 
-    /// Note:
-    ///     Don't rely on this value to be the capacity of the string.
-    ///     Always use `to_rust_string` to convert to a Rust `String`.
-    pub capacity: usize,  // Capacity of the allocated buffer
+    /// Union for capacity or small string optimization buffer
+    pub data: StdStringData,
 }
 
 impl StdString {
     /// Converts the `StdString` to a Rust `String`.
     pub unsafe fn to_rust_string(&self) -> String {
         // Ensure the pointer is not null and the size is valid
-        if self.data.is_null() || self.size == 0 {
+        if self.begin.is_null() || self.size == 0 {
             return String::new();
         }
 
-        if self.size > 1_000_000 || self.capacity > 1_000_000 {
+        if self.size > 1_000  {
             // Prevent indexing a huge string... calculate the length manually
             let mut len = 0;
-            while *self.data.add(len) != 0 && len < self.size {
+            while *self.begin.add(len) != 0 && len < self.size {
                 len += 1;
             }
             // Create a slice from the raw pointer and length
-            let slice = std::slice::from_raw_parts(self.data, len);
+            let slice = std::slice::from_raw_parts(self.begin, len);
             // Convert the slice to a Rust String
             return String::from_utf8_lossy(slice).into_owned()
         }
 
         // Create a slice from the raw pointer and length
-        let slice = std::slice::from_raw_parts(self.data, self.size);
+        let slice = std::slice::from_raw_parts(self.begin, self.size);
 
         // Convert the slice to a String
         String::from_utf8_lossy(slice).into_owned()
@@ -76,12 +86,16 @@ impl StdString {
     pub fn from_rust_string(s: String) -> Self {
         let size = s.len();
         let capacity = s.capacity();
-        let data = s.as_ptr();
+        let start = s.as_ptr();
 
         // Prevent Rust from freeing the string while `StdString` exists
         std::mem::forget(s);
 
-        Self { data, size, capacity }
+        Self {
+            begin: start,
+            size,
+            data: StdStringData { capacity },
+        }
     }
 
     /// Reclaims ownership of the original Rust `String`.
@@ -89,28 +103,29 @@ impl StdString {
     /// This is unsafe because it assumes the `StdString` was created
     /// from a Rust `String` using `from_rust_string`.
     pub unsafe fn into_rust_string(self) -> String {
-        String::from_raw_parts(self.data as *mut u8, self.size, self.capacity)
+        // Reclaim ownership of the original Rust String
+        String::from_raw_parts(self.begin as *mut u8, self.size, self.data.capacity) 
     }
 }
 
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct StdWstring {
-    pub data: *const u16, // Pointer to the character data
+    pub begin: *const u16, // Pointer to the character data
     pub size: usize,      // Size of the string
     pub capacity: usize,  // Capacity of the allocated buffer
 }
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct StdU16string {
-    pub data: *const u16, // Pointer to the character data
+    pub begin: *const u16, // Pointer to the character data
     pub size: usize,      // Size of the string
     pub capacity: usize,  // Capacity of the allocated buffer
 }
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct  StdU32string {
-    pub data: *const u32, // Pointer to the character data
+    pub begin: *const u32, // Pointer to the character data
     pub size: usize,      // Size of the string
     pub capacity: usize,  // Capacity of the allocated buffer
 }
@@ -201,49 +216,16 @@ pub struct StdPtrBaseVoid {
 }
 
 #[repr(C)]
-#[derive(Debug)]
-pub struct StdSharedPtrBaseMember {
-    pub _ptr: *mut Member,
-    pub _rep: *mut StdRefCountBase,
-}
-
-#[repr(C)]
-#[derive(Debug)]
-pub struct StdSharedPtrBaseFieldDesc {
-    pub _ptr: *mut FieldDesc,
-    pub _rep: *mut StdRefCountBase,
-}
-
-#[repr(C)]
-#[derive(Debug)]
-pub struct StdSharedPtrBaseReq {
-    pub _ptr: *mut Req,
-    pub _rep: *mut StdRefCountBase,
-}
-
-#[repr(C)]
-///A Rust equivalent to C++'s std::shared_ptr for managing shared ownership of a dynamically allocated object."]
 #[derive(Debug, Clone)]
-pub struct StdSharedPtrVoid {
-    pub _base: StdPtrBaseVoid,
+pub struct StdSharedPtrBase<T> {
+    pub _ptr: T,
+    pub _rep: *mut StdRefCountBase,
 }
 
 #[repr(C)]
-#[derive(Debug)]
-pub struct StdSharedPtrMember {
-    pub _base: StdSharedPtrBaseMember,
-}
-
-#[repr(C)]
-#[derive(Debug)]
-pub struct StdSharedPtrFieldDesc {
-    pub _base: StdSharedPtrBaseFieldDesc,
-}
-
-#[repr(C)]
-#[derive(Debug)]
-pub struct StdSharedPtrReq {
-    pub _base: StdSharedPtrBaseReq,
+#[derive(Debug, Clone)]
+pub struct StdSharedPtr<T> {
+    pub _base: StdSharedPtrBase<T>,
 }
 
 ///!< no associate storage"]
@@ -413,8 +395,8 @@ pub struct MemberHelper {
 #[repr(C)]
 #[derive(Debug)]
 pub struct TypeDef {
-    pub top: StdSharedPtrMember,
-    pub desc: StdSharedPtrFieldDesc,
+    pub top: StdSharedPtr<*mut Member>,
+    pub desc: StdSharedPtr<*mut FieldDesc>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -499,14 +481,36 @@ pub struct Req {
 #[repr(C)]
 #[derive(Debug)]
 pub struct CommonBase {
-    pub ctx: StdSharedPtrVoid,
+    pub ctx: StdSharedPtr<*mut std::ffi::c_void>,
     pub _name: StdString,
     pub _server: StdString,
-    pub req: StdSharedPtrReq,
+    pub req: StdSharedPtr<*mut Req>,
     pub _prio: std::ffi::c_uint,
     pub _autoexec: bool,
     pub _sync_cancel: bool,
 }
+
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of pvxs_client_detail_CommonBase"]
+        [::std::mem::size_of::<CommonBase>() - 104usize];
+    ["Alignment of pvxs_client_detail_CommonBase"]
+        [::std::mem::align_of::<CommonBase>() - 8usize];
+    ["Offset of field: pvxs_client_detail_CommonBase::ctx"]
+        [::std::mem::offset_of!(CommonBase, ctx) - 0usize];
+    ["Offset of field: pvxs_client_detail_CommonBase::_name"]
+        [::std::mem::offset_of!(CommonBase, _name) - 16usize];
+    ["Offset of field: pvxs_client_detail_CommonBase::_server"]
+        [::std::mem::offset_of!(CommonBase, _server) - 48usize];
+    ["Offset of field: pvxs_client_detail_CommonBase::req"]
+        [::std::mem::offset_of!(CommonBase, req) - 80usize];
+    ["Offset of field: pvxs_client_detail_CommonBase::_prio"]
+        [::std::mem::offset_of!(CommonBase, _prio) - 96usize];
+    ["Offset of field: pvxs_client_detail_CommonBase::_autoexec"]
+        [::std::mem::offset_of!(CommonBase, _autoexec) - 100usize];
+    ["Offset of field: pvxs_client_detail_CommonBase::_syncCancel"]
+        [::std::mem::offset_of!(CommonBase, _sync_cancel) - 101usize];
+};
 
 ///! Options common to all operations
 #[repr(C)]
@@ -524,7 +528,9 @@ pub struct CommonBaseReq {
     pub options: BTreeMap<StdString, Value>,
 }
 
-///! Prepare a remote GET or GET_FIELD (info) operation.\n! See Context::get()"]
+/// Prepare a remote GET or GET_FIELD (info) operation.
+/// 
+/// See Context::get()
 #[repr(C)]
 #[derive(Debug)]
 pub struct GetBuilder {
@@ -533,4 +539,18 @@ pub struct GetBuilder {
     pub _result: StdFunction,
     pub _get: bool,
 }
+
+/*#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of pvxs_client_GetBuilder"][::std::mem::size_of::<GetBuilder>() - 240usize];
+    ["Alignment of pvxs_client_GetBuilder"]
+        [::std::mem::align_of::<GetBuilder>() - 8usize];
+    ["Offset of field: pvxs_client_GetBuilder::_onInit"]
+        [::std::mem::offset_of!(GetBuilder, _on_init) - 104usize];
+    ["Offset of field: pvxs_client_GetBuilder::_result"]
+        [::std::mem::offset_of!(GetBuilder, _result) - 168usize];
+    ["Offset of field: pvxs_client_GetBuilder::_get"]
+        [::std::mem::offset_of!(GetBuilder, _get) - 232usize];
+};*/
+
 

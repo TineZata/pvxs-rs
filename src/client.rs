@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use libloading::Symbol;
 use crate::pvxs_library::PvxsLibrary;
-use crate::std_types::{StdSharedPtrVoid, StdString};
+use crate::std_types::{GetBuilder, StdSharedPtr, StdString};
 
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -74,7 +74,7 @@ const _: () = {
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct Context {
-    pub _private: StdSharedPtrVoid,
+    pub _private: StdSharedPtr<*mut std::ffi::c_void>,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
@@ -84,7 +84,10 @@ const _: () = {
 };
 
 impl Context {
-    #[doc = " Create new client context based on configuration from $EPICS_PVA* environment variables.\n\n Shorthand for @code Config::fromEnv().build() @endcode.\n @since 0.2.1"]
+    /// Create new client context based on configuration from $EPICS_PVA* environment variables.
+    /// 
+    /// Shorthand for `cpp Config::fromEnv().build()`\n 
+    /// @since 0.2.1
     pub unsafe fn from_env(pvxs_library: Arc<PvxsLibrary>) -> Context {
         // Load the symbol for `fromEnv`
         let func: Symbol<unsafe extern "C" fn() -> Context> = 
@@ -101,7 +104,7 @@ impl Context {
         func()
     }
 
-    #[doc = "! Effective config of running client"]
+    /// Effective config of running client.
     pub unsafe fn config(this: *const Context, pvxs_library: Arc<PvxsLibrary>) -> *const Config {
         // Load the symbol for `config`
         let func: Symbol<unsafe extern "C" fn(*const Context) -> *const Config> = 
@@ -115,6 +118,23 @@ impl Context {
             })
             .expect("Failed to find symbol for Context::config");
         func(this)
+    }
+
+    // ?info@Context@client@pvxs@@QEAA?AVGetBuilder@23@AEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z
+    // public: class pvxs::client::GetBuilder __thiscall pvxs::client::Context::info(class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > const &))
+    pub unsafe fn info(this: *const Context, pvxs_library: Arc<PvxsLibrary>, name: &StdString) -> GetBuilder {
+        // Load the symbol for `info`
+        let func: Symbol<unsafe extern "C" fn(*const Context, &StdString) -> GetBuilder> = 
+            pvxs_library.lib
+            .get(if cfg!(target_os = "windows") {
+                b"?info@Context@client@pvxs@@QEAAXAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z"
+            } else if cfg!(target_os = "linux") {
+                b"_ZN4pvxs6client7Context4infoERKNSt6__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE"
+            } else {
+                panic!("Unsupported platform");
+            })
+            .expect("Failed to find symbol for Context::info");
+        func(this, name)
     }
     
 }
