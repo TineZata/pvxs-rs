@@ -7,7 +7,6 @@ use crate::client::{Context, Config};
 /// 
 /// ## Example:
 /// ```rust
-/// use pvxs::version::get_version_str;
 /// 
 /// let version: String = pvxs::get_version_str();
 /// println!("PVXS Version: {}", version);
@@ -33,8 +32,6 @@ pub fn get_version_str() -> String {
 /// if ctx._private._base._ptr.is_null() {
 ///     println!("Failed to create context from environment");
 ///     return;
-/// } else {
-///     ctx
 /// }
 /// ```
 ///
@@ -64,7 +61,6 @@ pub fn get_context_from_env() -> Context {
 /// println!("TCP timeout: {}", config.tcp_timeout);
 /// println!("Auto address list: {}", if config.auto_addr_list { "true" } else { "false" });
 /// 
-/// config
 /// ```
 /// 
 pub fn get_context_config() -> Config {
