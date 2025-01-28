@@ -120,8 +120,7 @@ impl Context {
         func(this)
     }
 
-    // ?info@Context@client@pvxs@@QEAA?AVGetBuilder@23@AEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z
-    // public: class pvxs::client::GetBuilder __thiscall pvxs::client::Context::info(class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > const &))
+    /// 
     pub unsafe fn info(this: *const Context, pvxs_library: Arc<PvxsLibrary>, name: &StdString) -> GetBuilder {
         // Load the symbol for `info`
         let func: Symbol<unsafe extern "C" fn(*const Context, &StdString) -> GetBuilder> = 

@@ -29,18 +29,6 @@ pub const STD_BASIC_STRING_CONSTRUCT_STRATEGY_FROM_STRING: StdBasicStringConstru
 pub type StdBasicStringConstructStrategy = ::std::os::raw::c_uchar;
 
 #[repr(C)]
-pub union StdStringData {
-    /// Capacity of the allocated buffer
-    /// 
-    /// Note:
-    ///     Don't rely on this value to be the capacity of the string.
-    ///     Always use `to_rust_string` to convert to a Rust `String`.
-    pub capacity: usize,
-    /// Buffer for small string optimization
-    pub sso_buffer: [u8; 16],
-}
-
-#[repr(C)]
 #[derive(Debug, Clone)]
 pub struct StdString {
     /// Pointer to the start of string data
@@ -51,8 +39,12 @@ pub struct StdString {
     ///     Don't rely on this value to be the length of the string.
     ///     Always use `to_rust_string` to convert to a Rust `String`.
     pub size: usize,
-    /// Union for capacity or small string optimization buffer
-    pub data: StdStringData,
+    /// Capacity of the allocated buffer
+    /// 
+    /// Note:
+    ///     Don't rely on this value to be the capacity of the string.
+    ///     Always use `to_rust_string` to convert to a Rust `String`.
+    pub capacity: usize,
 }
 
 impl StdString {
@@ -86,15 +78,15 @@ impl StdString {
     pub fn from_rust_string(s: String) -> Self {
         let size = s.len();
         let capacity = s.capacity();
-        let start = s.as_ptr();
+        let begin = s.as_ptr();
 
         // Prevent Rust from freeing the string while `StdString` exists
         std::mem::forget(s);
 
         Self {
-            begin: start,
+            begin,
             size,
-            data: StdStringData { capacity },
+            capacity,
         }
     }
 
@@ -104,7 +96,7 @@ impl StdString {
     /// from a Rust `String` using `from_rust_string`.
     pub unsafe fn into_rust_string(self) -> String {
         // Reclaim ownership of the original Rust String
-        String::from_raw_parts(self.begin as *mut u8, self.size, self.data.capacity) 
+        String::from_raw_parts(self.begin as *mut u8, self.size, self.capacity) 
     }
 }
 
@@ -493,23 +485,23 @@ pub struct CommonBase {
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
     ["Size of pvxs_client_detail_CommonBase"]
-        [::std::mem::size_of::<CommonBase>() - 104usize];
+    [::std::mem::size_of::<CommonBase>() - 88usize];
     ["Alignment of pvxs_client_detail_CommonBase"]
-        [::std::mem::align_of::<CommonBase>() - 8usize];
+    [::std::mem::align_of::<CommonBase>() - 8usize];
     ["Offset of field: pvxs_client_detail_CommonBase::ctx"]
-        [::std::mem::offset_of!(CommonBase, ctx) - 0usize];
+    [::std::mem::offset_of!(CommonBase, ctx) - 0usize];
     ["Offset of field: pvxs_client_detail_CommonBase::_name"]
-        [::std::mem::offset_of!(CommonBase, _name) - 16usize];
+    [::std::mem::offset_of!(CommonBase, _name) - 16usize];
     ["Offset of field: pvxs_client_detail_CommonBase::_server"]
-        [::std::mem::offset_of!(CommonBase, _server) - 48usize];
+    [::std::mem::offset_of!(CommonBase, _server) - 40usize];
     ["Offset of field: pvxs_client_detail_CommonBase::req"]
-        [::std::mem::offset_of!(CommonBase, req) - 80usize];
+    [::std::mem::offset_of!(CommonBase, req) - 64usize];
     ["Offset of field: pvxs_client_detail_CommonBase::_prio"]
-        [::std::mem::offset_of!(CommonBase, _prio) - 96usize];
+    [::std::mem::offset_of!(CommonBase, _prio) - 80usize];
     ["Offset of field: pvxs_client_detail_CommonBase::_autoexec"]
-        [::std::mem::offset_of!(CommonBase, _autoexec) - 100usize];
+    [::std::mem::offset_of!(CommonBase, _autoexec) - 84usize];
     ["Offset of field: pvxs_client_detail_CommonBase::_syncCancel"]
-        [::std::mem::offset_of!(CommonBase, _sync_cancel) - 101usize];
+    [::std::mem::offset_of!(CommonBase, _sync_cancel) - 85usize];
 };
 
 ///! Options common to all operations
@@ -540,17 +532,16 @@ pub struct GetBuilder {
     pub _get: bool,
 }
 
-/*#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of pvxs_client_GetBuilder"][::std::mem::size_of::<GetBuilder>() - 240usize];
+    ["Size of pvxs_client_GetBuilder"][::std::mem::size_of::<GetBuilder>() - 96usize];
     ["Alignment of pvxs_client_GetBuilder"]
         [::std::mem::align_of::<GetBuilder>() - 8usize];
     ["Offset of field: pvxs_client_GetBuilder::_onInit"]
-        [::std::mem::offset_of!(GetBuilder, _on_init) - 104usize];
+        [::std::mem::offset_of!(GetBuilder, _on_init) - 88usize];
     ["Offset of field: pvxs_client_GetBuilder::_result"]
-        [::std::mem::offset_of!(GetBuilder, _result) - 168usize];
+        [::std::mem::offset_of!(GetBuilder, _result) - 89usize];
     ["Offset of field: pvxs_client_GetBuilder::_get"]
-        [::std::mem::offset_of!(GetBuilder, _get) - 232usize];
-};*/
-
+        [::std::mem::offset_of!(GetBuilder, _get) - 90usize];
+};
 
