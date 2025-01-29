@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use crate::std_types::GetBuilder;
 use crate::version::Version;
 use crate::pvxs_library::PvxsLibrary;
 use crate::client::{Context, Config};
@@ -68,4 +69,12 @@ pub fn get_context_config() -> Config {
     let config: *const Config = unsafe { Context::config(&ctx, Arc::clone(&pvxs_library)) };
     let config_obj: &Config = unsafe { &*config };
     config_obj.clone()
+}
+
+pub fn get_context_info(name: &str) -> GetBuilder {
+    let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
+    let ctx: Context = unsafe { Context::from_env(Arc::clone(&pvxs_library)) };
+    let info = unsafe {
+        Context::info(&ctx, name, Arc::clone(&pvxs_library))
+    };
 }

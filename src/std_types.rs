@@ -530,6 +530,7 @@ pub struct GetBuilder {
     pub _on_init: StdFunction,
     pub _result: StdFunction,
     pub _get: bool,
+    pub  _exec_info: StdSharedPtr<Operation>,
 }
 
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
@@ -545,3 +546,26 @@ const _: () = {
         [::std::mem::offset_of!(GetBuilder, _get) - 90usize];
 };
 
+#[repr(C)]
+pub struct OperationVtable(::std::os::raw::c_void);
+#[doc = "! Handle for in-progress operation"]
+#[repr(C)]
+#[derive(Debug)]
+pub struct Operation {
+    pub vtable_: *const OperationVtable,
+    pub op: OperationT,
+}
+pub const OPERATION_T_INFO: OperationT = 17;
+pub const OPERATION_T_GET: OperationT = 10;
+pub const OPERATION_T_PUT: OperationT = 11;
+pub const OPERATION_T_RPC: OperationT = 20;
+pub const OPERATION_T_MONITOR: OperationT = 13;
+pub const OPERATION_T_DISCOVER: OperationT = 3;
+#[doc = "! Operation type"]
+pub type OperationT = ::std::os::raw::c_int;
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of pvxs_client_Operation"][::std::mem::size_of::<Operation>() - 16usize];
+    ["Alignment of pvxs_client_Operation"][::std::mem::align_of::<Operation>() - 8usize];
+    ["Offset of field: pvxs_client_Operation::op"][::std::mem::offset_of!(Operation, op) - 8usize];
+};

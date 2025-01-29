@@ -120,7 +120,7 @@ impl Context {
         func(this)
     }
 
-    /// 
+    /// Returns a new GetBuilder instance from the context and name.
     pub unsafe fn info(this: *const Context, pvxs_library: Arc<PvxsLibrary>, name: &StdString) -> GetBuilder {
         // Load the symbol for `info`
         let func: Symbol<unsafe extern "C" fn(*const Context, &StdString) -> GetBuilder> = 
