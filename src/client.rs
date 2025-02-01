@@ -126,7 +126,7 @@ impl Context {
         let func: Symbol<unsafe extern "C" fn(*const Context, &StdString) -> GetBuilder> = 
             pvxs_library.lib
             .get(if cfg!(target_os = "windows") {
-                b"?info@Context@client@pvxs@@QEAAXAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z"
+                b"?info@Context@client@pvxs@@QEAA?AVGetBuilder@23@AEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z"
             } else if cfg!(target_os = "linux") {
                 b"_ZN4pvxs6client7Context4infoERKNSt6__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE"
             } else {

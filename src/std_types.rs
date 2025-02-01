@@ -188,6 +188,14 @@ pub struct StdFunction {
     pub _address: u8,
 }
 
+impl StdFunction {
+    pub fn new(f: fn()) -> Self {
+        Self {
+            _address: f as u8,
+        }
+    }
+}
+
 #[repr(C)]
 ///Holds atomic counters for reference and weak counts, similar to C++'s `std::shared_ptr`."]
 #[derive(Debug)]
@@ -530,7 +538,63 @@ pub struct GetBuilder {
     pub _on_init: StdFunction,
     pub _result: StdFunction,
     pub _get: bool,
-    pub  _exec_info: StdSharedPtr<Operation>,
+}
+
+impl GetBuilder {
+    /// Create a new GetBuilder instance.
+    pub fn new() -> Self {
+        Self {
+            _base: CommonBuilder {
+                _phantom_0: ::std::marker::PhantomData,
+                _base: CommonBase {
+                    ctx: StdSharedPtr {
+                        _base: StdSharedPtrBase {
+                            _ptr: std::ptr::null_mut(),
+                            _rep: std::ptr::null_mut(),
+                        },
+                    },
+                    _name: StdString {
+                        begin: std::ptr::null(),
+                        size: 0,
+                        capacity: 0,
+                    },
+                    _server: StdString {
+                        begin: std::ptr::null(),
+                        size: 0,
+                        capacity: 0,
+                    },
+                    req: StdSharedPtr {
+                        _base: StdSharedPtrBase {
+                            _ptr: std::ptr::null_mut(),
+                            _rep: std::ptr::null_mut(),
+                        },
+                    },
+                    _prio: 0,
+                    _autoexec: false,
+                    _sync_cancel: false,
+                },
+            },
+            _on_init: StdFunction { _address: 0 },
+            _result: StdFunction { _address: 0 },
+            _get: false,
+        }
+    }
+
+    /// Assign a callback to the `GetBuilder::_on_init` field.
+    pub fn on_init(&mut self, f: StdFunction) {
+        self._on_init = f;
+    }
+
+    /// Assign a callback to the `GetBuilder::_result` field.
+    pub fn on_result(&mut self, f: StdFunction) {
+        self._result = f;
+    }
+
+    /// Assign a value to the `GetBuilder::_get` field.
+    pub fn get(&mut self, b: bool) {
+        self._get = b;
+    }
+    
 }
 
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
