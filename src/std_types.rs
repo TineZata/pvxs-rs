@@ -1,3 +1,4 @@
+use std::any::type_name;
 use std::sync::atomic::AtomicUsize;
 use std::collections::BTreeMap;
 
@@ -29,8 +30,84 @@ pub const STD_BASIC_STRING_CONSTRUCT_STRATEGY_FROM_STRING: StdBasicStringConstru
 pub type StdBasicStringConstructStrategy = ::std::os::raw::c_uchar;
 
 #[repr(C)]
+pub union ShortStringOptimisation {
+    /// Capacity of the allocated buffer
+    /// 
+    /// Note:
+    ///     Don't rely on this value to be the capacity of the string.
+    ///     Always use `to_rust_string` to convert to a Rust `String`.
+    pub capacity: usize,
+    /// Buffer for short strings
+    pub short_buffer: [u8; 16usize],
+}
+
+impl Clone for ShortStringOptimisation {
+    fn clone(&self) -> Self {
+        unsafe { std::ptr::read(self) }
+    }
+}
+
+impl core::fmt::Debug for ShortStringOptimisation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        unsafe {
+            write!(f, "ShortStringOptimisation {{ capacity: {}, short_buffer: {:?} }}", self.capacity, &self.short_buffer)
+        }
+    }
+}
+
+#[repr(C)]
 #[derive(Debug, Clone)]
-pub struct StdString {
+pub struct StdSSOString {
+    pub begin: *const u8,
+    pub size: usize,
+    pub cap_or_sso: ShortStringOptimisation,
+}
+
+impl StdSSOString {
+    pub unsafe fn to_rust_string(&self) -> String {
+        // Ensure the pointer is not null and the size is valid
+        if self.begin.is_null() || self.size == 0 {
+            return String::new();
+        }
+
+        if self.size > 1_000  {
+            // Prevent indexing a huge string... calculate the length manually
+            let mut len = 0;
+            while *self.begin.add(len) != 0 && len < self.size {
+                len += 1;
+            }
+            // Create a slice from the raw pointer and length
+            let slice = std::slice::from_raw_parts(self.begin, len);
+            // Convert the slice to a Rust String
+            return String::from_utf8_lossy(slice).into_owned()
+        }
+
+        // Create a slice from the raw pointer and length
+        let slice = std::slice::from_raw_parts(self.begin, self.size);
+
+        // Convert the slice to a String
+        String::from_utf8_lossy(slice).into_owned()
+    }
+
+    pub fn from_rust_string(s: String) -> Self {
+        let size = s.len();
+        let capacity = s.capacity();
+        let begin = s.as_ptr();
+
+        // Prevent Rust from freeing the string while `StdString` exists
+        std::mem::forget(s);
+
+        Self {
+            begin,
+            size,
+            cap_or_sso: ShortStringOptimisation { capacity },
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct StdBasicString {
     /// Pointer to the start of string data
     pub begin: *const u8,  
     /// Size of the string
@@ -47,7 +124,7 @@ pub struct StdString {
     pub capacity: usize,
 }
 
-impl StdString {
+impl StdBasicString {
     /// Converts the `StdString` to a Rust `String`.
     pub unsafe fn to_rust_string(&self) -> String {
         // Ensure the pointer is not null and the size is valid
@@ -184,16 +261,8 @@ pub struct StdReverseIterator<_BidIt> {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
-pub struct StdFunction {
-    pub _address: u8,
-}
-
-impl StdFunction {
-    pub fn new(f: fn()) -> Self {
-        Self {
-            _address: f as u8,
-        }
-    }
+pub struct StdFunction64 {
+    pub _address: [u8; 64],
 }
 
 #[repr(C)]
@@ -366,8 +435,8 @@ impl TypeCode {
 #[derive(Debug, Clone)]
 pub struct Member {
     pub code: TypeCode,
-    pub name: StdString,
-    pub id: StdString,
+    pub name: StdBasicString,
+    pub id: StdBasicString,
     pub children: Vec<Member>,
 }
 #[repr(C)]
@@ -423,16 +492,16 @@ const _: () = {
 #[derive(Debug, Clone)]
 pub struct FieldDesc {
     ///Type ID string (Struct/Union)"]
-    pub id: StdString,
+    pub id: StdBasicString,
 
     /// Lookup of all descendant fields of this Structure or Union.
     /// `fld.sub.leaf -> rel index`\r
     /// - For Struct, relative to this (always >=1)\r
     /// - For Union, offset in members array (one entry will always be zero)"]
-    pub mlookup: BTreeMap<StdString, usize>,
+    pub mlookup: BTreeMap<StdBasicString, usize>,
 
     /// Child iteration. `child# -> (sub, rel index in enclosing vector<FieldDesc>)`
-    pub miter: Vec<(StdString, usize)>,
+    pub miter: Vec<(StdBasicString, usize)>,
 
     /// Number of FieldDesc nodes between this node and its parent Struct (or 0 if no parent).
     /// This value also appears in the parent's miter and mlookup mappings.
@@ -475,15 +544,15 @@ pub struct Value {
 pub struct Req {
     pv_request: Value,
     fields: Member,
-    options: BTreeMap<StdString, Value>,
+    options: BTreeMap<StdBasicString, Value>,
 }
 
 #[repr(C)]
 #[derive(Debug)]
 pub struct CommonBase {
     pub ctx: StdSharedPtr<*mut std::ffi::c_void>,
-    pub _name: StdString,
-    pub _server: StdString,
+    pub _name: StdSSOString,
+    pub _server: StdSSOString,
     pub req: StdSharedPtr<*mut Req>,
     pub _prio: std::ffi::c_uint,
     pub _autoexec: bool,
@@ -493,23 +562,23 @@ pub struct CommonBase {
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
     ["Size of pvxs_client_detail_CommonBase"]
-    [::std::mem::size_of::<CommonBase>() - 88usize];
+        [::std::mem::size_of::<CommonBase>() - 104usize];
     ["Alignment of pvxs_client_detail_CommonBase"]
-    [::std::mem::align_of::<CommonBase>() - 8usize];
+        [::std::mem::align_of::<CommonBase>() - 8usize];
     ["Offset of field: pvxs_client_detail_CommonBase::ctx"]
-    [::std::mem::offset_of!(CommonBase, ctx) - 0usize];
+        [::std::mem::offset_of!(CommonBase, ctx) - 0usize];
     ["Offset of field: pvxs_client_detail_CommonBase::_name"]
-    [::std::mem::offset_of!(CommonBase, _name) - 16usize];
+        [::std::mem::offset_of!(CommonBase, _name) - 16usize];
     ["Offset of field: pvxs_client_detail_CommonBase::_server"]
-    [::std::mem::offset_of!(CommonBase, _server) - 40usize];
+        [::std::mem::offset_of!(CommonBase, _server) - 48usize];
     ["Offset of field: pvxs_client_detail_CommonBase::req"]
-    [::std::mem::offset_of!(CommonBase, req) - 64usize];
+        [::std::mem::offset_of!(CommonBase, req) - 80usize];
     ["Offset of field: pvxs_client_detail_CommonBase::_prio"]
-    [::std::mem::offset_of!(CommonBase, _prio) - 80usize];
+        [::std::mem::offset_of!(CommonBase, _prio) - 96usize];
     ["Offset of field: pvxs_client_detail_CommonBase::_autoexec"]
-    [::std::mem::offset_of!(CommonBase, _autoexec) - 84usize];
+        [::std::mem::offset_of!(CommonBase, _autoexec) - 100usize];
     ["Offset of field: pvxs_client_detail_CommonBase::_syncCancel"]
-    [::std::mem::offset_of!(CommonBase, _sync_cancel) - 85usize];
+        [::std::mem::offset_of!(CommonBase, _sync_cancel) - 101usize];
 };
 
 ///! Options common to all operations
@@ -525,7 +594,7 @@ pub struct CommonBuilder<Base> {
 pub struct CommonBaseReq {
     pub pv_request: Value,
     pub fields: Member,
-    pub options: BTreeMap<StdString, Value>,
+    pub options: BTreeMap<StdBasicString, Value>,
 }
 
 /// Prepare a remote GET or GET_FIELD (info) operation.
@@ -535,13 +604,13 @@ pub struct CommonBaseReq {
 #[derive(Debug)]
 pub struct GetBuilder {
     pub _base: CommonBuilder<CommonBase>,
-    pub _on_init: StdFunction,
-    pub _result: StdFunction,
+    pub _on_init: StdFunction64,
+    pub _result: StdFunction64,
     pub _get: bool,
 }
 
 impl GetBuilder {
-    /// Create a new GetBuilder instance.
+    /*/// Create a new GetBuilder instance.
     pub fn new() -> Self {
         Self {
             _base: CommonBuilder {
@@ -553,12 +622,12 @@ impl GetBuilder {
                             _rep: std::ptr::null_mut(),
                         },
                     },
-                    _name: StdString {
+                    _name: StdBasicString {
                         begin: std::ptr::null(),
                         size: 0,
                         capacity: 0,
                     },
-                    _server: StdString {
+                    _server: StdBasicString {
                         begin: std::ptr::null(),
                         size: 0,
                         capacity: 0,
@@ -578,15 +647,15 @@ impl GetBuilder {
             _result: StdFunction { _address: 0 },
             _get: false,
         }
-    }
+    }*/
 
     /// Assign a callback to the `GetBuilder::_on_init` field.
-    pub fn on_init(&mut self, f: StdFunction) {
+    pub fn on_init(&mut self, f: StdFunction64) {
         self._on_init = f;
     }
 
     /// Assign a callback to the `GetBuilder::_result` field.
-    pub fn on_result(&mut self, f: StdFunction) {
+    pub fn on_result(&mut self, f: StdFunction64) {
         self._result = f;
     }
 
@@ -599,15 +668,15 @@ impl GetBuilder {
 
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of pvxs_client_GetBuilder"][::std::mem::size_of::<GetBuilder>() - 96usize];
+    ["Size of pvxs_client_GetBuilder"][::std::mem::size_of::<GetBuilder>() - 240usize];
     ["Alignment of pvxs_client_GetBuilder"]
         [::std::mem::align_of::<GetBuilder>() - 8usize];
     ["Offset of field: pvxs_client_GetBuilder::_onInit"]
-        [::std::mem::offset_of!(GetBuilder, _on_init) - 88usize];
+        [::std::mem::offset_of!(GetBuilder, _on_init) - 104usize];
     ["Offset of field: pvxs_client_GetBuilder::_result"]
-        [::std::mem::offset_of!(GetBuilder, _result) - 89usize];
+        [::std::mem::offset_of!(GetBuilder, _result) - 168usize];
     ["Offset of field: pvxs_client_GetBuilder::_get"]
-        [::std::mem::offset_of!(GetBuilder, _get) - 90usize];
+        [::std::mem::offset_of!(GetBuilder, _get) - 232usize];
 };
 
 #[repr(C)]

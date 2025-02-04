@@ -1,7 +1,8 @@
+use std::ffi::c_char;
 use std::sync::Arc;
 use libloading::Symbol;
 use crate::pvxs_library::PvxsLibrary;
-use crate::std_types::{GetBuilder, StdSharedPtr, StdString};
+use crate::std_types::{GetBuilder, StdBasicString, StdSSOString, StdSharedPtr};
 
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -12,17 +13,17 @@ pub struct Config {
     /// - `<ipaddr>[:<port#>]`
     /// - `<ipmultiaddr>[:<port>][,<ttl>][@<ifaceaddr>]`
     /// 
-    pub address_list: StdString,
+    pub address_list: StdBasicString,
     /// List of local interface addresses on which beacons may be received.
     /// 
     /// Also constrains autoAddrList to only consider broadcast addresses of listed interfaces.
     /// Empty implies wildcard 0.0.0.0
-    pub interfaces: StdString,
+    pub interfaces: StdBasicString,
     /// List of TCP name servers.
     /// 
     /// Client context will maintain connections, and send search requests, to these servers.
     /// @since 0.2.0
-    pub name_servers: StdString,
+    pub name_servers: StdBasicString,
     /// UDP port to bind.  
     /// 
     /// Default is 5076.  
@@ -46,7 +47,7 @@ pub struct Config {
     _udp: bool,
 }
 
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+/*#[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
     ["Size of pvxs_client_Config"][::std::mem::size_of::<Config>() - 96usize];
     ["Alignment of pvxs_client_Config"][::std::mem::align_of::<Config>() - 8usize];
@@ -68,7 +69,7 @@ const _: () = {
         [::std::mem::offset_of!(Config, _be) - 88usize];
     ["Offset of field: pvxs_client_Config::UDP"]
         [::std::mem::offset_of!(Config, _udp) - 89usize];
-};
+};*/
 
 #[doc = " An independent PVA protocol client instance\n\n  Typically created with Config::build()\n\n  @code\n  Context ctxt(Config::from_env().build());\n  @endcode"]
 #[repr(C)]
@@ -121,9 +122,9 @@ impl Context {
     }
 
     /// Returns a new GetBuilder instance from the context and name.
-    pub unsafe fn info(this: *const Context, pvxs_library: Arc<PvxsLibrary>, name: &StdString) -> GetBuilder {
+    pub unsafe fn info(this: *const Context, pvxs_library: Arc<PvxsLibrary>, name: &StdSSOString) -> GetBuilder {
         // Load the symbol for `info`
-        let func: Symbol<unsafe extern "C" fn(*const Context, &StdString) -> GetBuilder> = 
+        let func: Symbol<unsafe extern "C" fn(*const Context, &StdSSOString) -> GetBuilder> = 
             pvxs_library.lib
             .get(if cfg!(target_os = "windows") {
                 b"?info@Context@client@pvxs@@QEAA?AVGetBuilder@23@AEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z"

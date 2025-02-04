@@ -22,7 +22,7 @@ pub use client::{
 };
 pub use std_types::{
     GetBuilder,
-    StdString,
+    StdBasicString,
 };
 pub use wrapper::{
     get_version_str,
