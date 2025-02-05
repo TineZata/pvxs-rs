@@ -28,6 +28,6 @@ pub use wrapper::{
     get_version_str,
     get_context_from_env,
     get_context_config,
-    get_context_info,
+    //get_context_info,
 };
 

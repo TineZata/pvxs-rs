@@ -1,6 +1,7 @@
 use std::any::type_name;
 use std::sync::atomic::AtomicUsize;
 use std::collections::BTreeMap;
+use crate::client::detail::common_base::{self, CommonBase};
 
 pub type StdBoolConstant = u8;
 pub type StdEnableIfT = u8;
@@ -538,49 +539,6 @@ pub struct Value {
     desc: FieldDesc,
 }
 
-/// Equivalent of `CommonBase::Req` in C++
-#[repr(C)]
-#[derive(Debug)]
-pub struct Req {
-    pv_request: Value,
-    fields: Member,
-    options: BTreeMap<StdBasicString, Value>,
-}
-
-#[repr(C)]
-#[derive(Debug)]
-pub struct CommonBase {
-    pub ctx: StdSharedPtr<*mut std::ffi::c_void>,
-    pub _name: StdSSOString,
-    pub _server: StdSSOString,
-    pub req: StdSharedPtr<*mut Req>,
-    pub _prio: std::ffi::c_uint,
-    pub _autoexec: bool,
-    pub _sync_cancel: bool,
-}
-
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of pvxs_client_detail_CommonBase"]
-        [::std::mem::size_of::<CommonBase>() - 104usize];
-    ["Alignment of pvxs_client_detail_CommonBase"]
-        [::std::mem::align_of::<CommonBase>() - 8usize];
-    ["Offset of field: pvxs_client_detail_CommonBase::ctx"]
-        [::std::mem::offset_of!(CommonBase, ctx) - 0usize];
-    ["Offset of field: pvxs_client_detail_CommonBase::_name"]
-        [::std::mem::offset_of!(CommonBase, _name) - 16usize];
-    ["Offset of field: pvxs_client_detail_CommonBase::_server"]
-        [::std::mem::offset_of!(CommonBase, _server) - 48usize];
-    ["Offset of field: pvxs_client_detail_CommonBase::req"]
-        [::std::mem::offset_of!(CommonBase, req) - 80usize];
-    ["Offset of field: pvxs_client_detail_CommonBase::_prio"]
-        [::std::mem::offset_of!(CommonBase, _prio) - 96usize];
-    ["Offset of field: pvxs_client_detail_CommonBase::_autoexec"]
-        [::std::mem::offset_of!(CommonBase, _autoexec) - 100usize];
-    ["Offset of field: pvxs_client_detail_CommonBase::_syncCancel"]
-        [::std::mem::offset_of!(CommonBase, _sync_cancel) - 101usize];
-};
-
 ///! Options common to all operations
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -610,44 +568,14 @@ pub struct GetBuilder {
 }
 
 impl GetBuilder {
-    /*/// Create a new GetBuilder instance.
-    pub fn new() -> Self {
+    pub fn new (base: CommonBase) -> Self {
         Self {
-            _base: CommonBuilder {
-                _phantom_0: ::std::marker::PhantomData,
-                _base: CommonBase {
-                    ctx: StdSharedPtr {
-                        _base: StdSharedPtrBase {
-                            _ptr: std::ptr::null_mut(),
-                            _rep: std::ptr::null_mut(),
-                        },
-                    },
-                    _name: StdBasicString {
-                        begin: std::ptr::null(),
-                        size: 0,
-                        capacity: 0,
-                    },
-                    _server: StdBasicString {
-                        begin: std::ptr::null(),
-                        size: 0,
-                        capacity: 0,
-                    },
-                    req: StdSharedPtr {
-                        _base: StdSharedPtrBase {
-                            _ptr: std::ptr::null_mut(),
-                            _rep: std::ptr::null_mut(),
-                        },
-                    },
-                    _prio: 0,
-                    _autoexec: false,
-                    _sync_cancel: false,
-                },
-            },
-            _on_init: StdFunction { _address: 0 },
-            _result: StdFunction { _address: 0 },
+            _base: CommonBuilder { _phantom_0: std::marker::PhantomData, _base: base },
+            _on_init: StdFunction64 { _address: [0; 64] },
+            _result: StdFunction64 { _address: [0; 64] },
             _get: false,
         }
-    }*/
+    }
 
     /// Assign a callback to the `GetBuilder::_on_init` field.
     pub fn on_init(&mut self, f: StdFunction64) {
