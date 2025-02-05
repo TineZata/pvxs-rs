@@ -19,7 +19,9 @@ fn test2_pvxs_client_context_from_env() {
     let ctx: Context = unsafe { Context::from_env(Arc::clone(&pvxs_library)) };
     // Assert that the shared pointer is valid
     assert!(!ctx._private._base._ptr.is_null(), "Context pointer should be valid");
-    // Prevent the library from being dropped... this was causing a segfault
+    // Prevent the library from being dropped.
+    // Avoid this in production code as it will cause a memory leak. 
+    // I found this useful as a workaround to prevent a segfault in unit tests.
     std::mem::forget(pvxs_library);
 }
 
@@ -33,7 +35,9 @@ fn test3_pvxs_client_context_config() {
     assert_eq!(config_obj.udp_port, 5076, "UDP port should be default 5076");
     assert_eq!(config_obj.tcp_port, 5075, "TCP port should be default 5075");
     assert_eq!(config_obj.tcp_timeout, 40.0, "TCP timeout should be default 40.0s");
-    // Prevent the library from being dropped... this was causing a segfault
+    // Prevent the library from being dropped.
+    // Avoid this in production code as it will cause a memory leak. 
+    // I found this useful as a workaround to prevent a segfault in unit tests.
     std::mem::forget(pvxs_library);
 }
 

@@ -1,5 +1,6 @@
 use libloading::{Library, Symbol};
 
+/// Struct resposible for loading the PVXS dll and lib files.
 pub struct PvxsLibrary {
     pub lib: Library,
 }
@@ -29,6 +30,12 @@ impl PvxsLibrary {
     self.lib
         .get::<T>(mangled_name.as_bytes())
         .map_err(|e| format!("Failed to load symbol '{}': {}", mangled_name, e))
+    }
+}
+
+impl Drop for PvxsLibrary {
+    fn drop(&mut self) {
+        // Dummy drop implementation
     }
 }
 

@@ -44,9 +44,12 @@ pub fn get_context_from_env() -> Context {
 /// 
 /// ## Example:
 /// ```rust
+/// use std::sync::Arc;
+/// use pvxs::pvxs_library::PvxsLibrary;
 /// use pvxs::client::Config;
 /// 
-/// let config: Config = pvxs::get_context_config();
+/// let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
+/// let config: Config = pvxs::get_client_config(Arc::clone(&pvxs_library));
 /// let addr = unsafe { config.address_list.to_rust_string() };
 /// println!("Address list: {}", addr);
 /// 
@@ -63,8 +66,7 @@ pub fn get_context_from_env() -> Context {
 /// 
 /// ```
 /// 
-pub fn get_context_config() -> Config {
-    let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
+pub fn get_client_config(pvxs_library: Arc<PvxsLibrary>) -> Config {
     let ctx: Context = unsafe { Context::from_env(Arc::clone(&pvxs_library)) };
     let config: *const Config = unsafe { Context::config(&ctx, Arc::clone(&pvxs_library)) };
     let config_obj: &Config = unsafe { &*config };
