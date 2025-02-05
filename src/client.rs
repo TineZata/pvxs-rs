@@ -77,13 +77,13 @@ const _: () = {
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct Context {
-    pub _private: StdSharedPtr<*mut std::ffi::c_void>,
+    pub addr: StdSharedPtr<*mut std::ffi::c_void>,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
     ["Size of pvxs_client_Context"][::std::mem::size_of::<Context>() - 16usize];
     ["Alignment of pvxs_client_Context"][::std::mem::align_of::<Context>() - 8usize];
-    ["Offset of field: pvxs_client_Context::pvt"][::std::mem::offset_of!(Context, _private) - 0usize];
+    ["Offset of field: pvxs_client_Context::pvt"][::std::mem::offset_of!(Context, addr) - 0usize];
 };
 
 impl Context {

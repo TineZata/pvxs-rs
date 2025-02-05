@@ -18,7 +18,7 @@ fn test2_pvxs_client_context_from_env() {
     // Create a context
     let ctx: Context = unsafe { Context::from_env(Arc::clone(&pvxs_library)) };
     // Assert that the shared pointer is valid
-    assert!(!ctx._private._base._ptr.is_null(), "Context pointer should be valid");
+    assert!(!ctx.addr._base._ptr.is_null(), "Context pointer should be valid");
     // Prevent the library from being dropped.
     // Avoid this in production code as it will cause a memory leak. 
     // I found this useful as a workaround to prevent a segfault in unit tests.
@@ -29,7 +29,7 @@ fn test2_pvxs_client_context_from_env() {
 fn test3_pvxs_client_context_config() {
     let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
     let ctx: Context = unsafe { Context::from_env(Arc::clone(&pvxs_library)) };
-    assert!(!ctx._private._base._ptr.is_null(), "Failed to create context from environment");
+    assert!(!ctx.addr._base._ptr.is_null(), "Failed to create context from environment");
     let config: *const Config = unsafe { Context::config(&ctx, Arc::clone(&pvxs_library)) };
     let config_obj: &Config = unsafe { &*config };
     assert_eq!(config_obj.udp_port, 5076, "UDP port should be default 5076");

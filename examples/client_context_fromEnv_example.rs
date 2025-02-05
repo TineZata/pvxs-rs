@@ -2,7 +2,7 @@ use pvxs::client::Context;
 
 fn main() {
     let ctx: Context = pvxs::get_context_from_env();
-    if ctx._private._base._ptr.is_null() {
+    if ctx.addr._base._ptr.is_null() {
         println!("Failed to create context from environment");
         return;
     }

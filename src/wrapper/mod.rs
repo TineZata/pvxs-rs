@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use crate::std_types::{GetBuilder, StdBasicString, StdSSOString};
+use crate::std_types::{GetBuilder, StdSSOString};
 use crate::version::Version;
 use crate::pvxs_library::PvxsLibrary;
 use crate::client::{Context, Config};
@@ -29,10 +29,6 @@ pub fn get_version_str() -> String {
 /// use pvxs::client::Context;
 /// 
 /// let ctx: Context = pvxs::get_context_from_env();
-/// if ctx._private._base._ptr.is_null() {
-///     println!("Failed to create context from environment");
-///     return;
-/// }
 /// ```
 ///
 pub fn get_context_from_env() -> Context {
