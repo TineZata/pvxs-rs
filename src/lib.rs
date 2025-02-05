@@ -13,6 +13,7 @@ pub mod version; // Version information for the wrapper
 pub mod std_types; // Standard types for PVXS
 pub mod client; // Client context for PVXS
 pub mod wrapper; // Wrapper for the PVXS library
+pub mod epics; // EPICS types for PVXS
 
 
 // Publicly exposed functions or types from submodules

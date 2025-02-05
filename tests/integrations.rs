@@ -6,10 +6,12 @@ use pvxs::client::{Context, Config};
 #[test]
 fn test1_pvxs_version() {
     let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
-    let version = unsafe { Version::version_str(pvxs_library) };
+    let version = unsafe { Version::version_str(Arc::clone(&pvxs_library)) };
     assert!(!version.is_empty(), "Version string should not be empty");
-    dbg!(version);
-    
+    // Prevent the library from being dropped.
+    // Avoid this in production code as it will cause a memory leak. 
+    // I found this useful as a workaround to prevent a segfault in unit tests.
+    std::mem::forget(pvxs_library);
 }
 
 #[test]

@@ -8,13 +8,15 @@ use crate::client::{Context, Config};
 /// 
 /// ## Example:
 /// ```rust
-/// let version: String = pvxs::get_version_str();
+/// use std::sync::Arc;
+/// let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
+/// let version = unsafe { Version::version_str(Arc::clone(&pvxs_library)) };
 /// println!("PVXS Version: {}", version);
 /// ```
 /// 
 pub fn get_version_str() -> String {
     let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
-    let version = unsafe { Version::version_str(pvxs_library) };
+    let version = unsafe { Version::version_str(Arc::clone(&pvxs_library)) };
     if version.is_empty(){
          "Version string should not be empty".to_string()
     }else {

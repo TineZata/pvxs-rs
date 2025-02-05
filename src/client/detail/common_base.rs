@@ -49,11 +49,11 @@ impl CommonBase {
     pub unsafe fn _raw_request(&mut self, arg1: *const Value, pvxs_library: Arc<PvxsLibrary>) {
         pvxs_client_detail_common_base_raw_request(self, arg1, pvxs_library)
     }
-    #[inline]
+    
     pub unsafe fn _field(&mut self, s: *const StdSSOString, pvxs_library: Arc<PvxsLibrary>) {
         pvxs_client_detail_common_base_field(self, s, pvxs_library)
     }
-    #[inline]
+    
     pub unsafe fn _record(
         &mut self,
         key: *const StdSSOString,
@@ -63,15 +63,15 @@ impl CommonBase {
     ) {
         pvxs_client_detail_common_base_record(self, key, value, vtype, pvxs_library)
     }
-    #[inline]
+    
     pub unsafe fn _parse(&mut self, req: *const StdSSOString, pvxs_library: Arc<PvxsLibrary>) {
         pvxs_client_detail_common_base_parse(self, req, pvxs_library)
     }
-    #[inline]
+    
     pub unsafe fn _build_req(&self, pvxs_library: Arc<PvxsLibrary>) -> Value {
         pvxs_client_detail_common_base_build_req(self, pvxs_library)
     }
-    #[inline]
+    
     pub unsafe fn destruct(&mut self, pvxs_library: Arc<PvxsLibrary>) {
         pvxs_client_detail_common_base_common_base_destructor(self, pvxs_library)
     }
