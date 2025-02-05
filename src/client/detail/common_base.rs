@@ -46,12 +46,12 @@ const _: () = {
 };
 
 impl CommonBase {
-    pub unsafe fn _rawRequest(&mut self, arg1: *const Value) {
-        pvxs_client_detail_common_base_raw_request(self, arg1)
+    pub unsafe fn _raw_request(&mut self, arg1: *const Value, pvxs_library: Arc<PvxsLibrary>) {
+        pvxs_client_detail_common_base_raw_request(self, arg1, pvxs_library)
     }
     #[inline]
-    pub unsafe fn _field(&mut self, s: *const StdSSOString) {
-        pvxs_client_detail_common_base_field(self, s)
+    pub unsafe fn _field(&mut self, s: *const StdSSOString, pvxs_library: Arc<PvxsLibrary>) {
+        pvxs_client_detail_common_base_field(self, s, pvxs_library)
     }
     #[inline]
     pub unsafe fn _record(
@@ -59,26 +59,26 @@ impl CommonBase {
         key: *const StdSSOString,
         value: *const ::std::os::raw::c_void,
         vtype: StoreType,
+        pvxs_library: Arc<PvxsLibrary>,
     ) {
-        pvxs_client_detail_common_base_record(self, key, value, vtype)
+        pvxs_client_detail_common_base_record(self, key, value, vtype, pvxs_library)
     }
     #[inline]
-    pub unsafe fn _parse(&mut self, req: *const StdSSOString) {
-        pvxs_client_detail_common_base_parse(self, req)
+    pub unsafe fn _parse(&mut self, req: *const StdSSOString, pvxs_library: Arc<PvxsLibrary>) {
+        pvxs_client_detail_common_base_parse(self, req, pvxs_library)
     }
     #[inline]
-    pub unsafe fn _buildReq(&self) -> Value {
-        pvxs_client_detail_common_base_build_req(self)
+    pub unsafe fn _build_req(&self, pvxs_library: Arc<PvxsLibrary>) -> Value {
+        pvxs_client_detail_common_base_build_req(self, pvxs_library)
     }
     #[inline]
-    pub unsafe fn destruct(&mut self) {
-        pvxs_client_detail_common_base_common_base_destructor(self)
+    pub unsafe fn destruct(&mut self, pvxs_library: Arc<PvxsLibrary>) {
+        pvxs_client_detail_common_base_common_base_destructor(self, pvxs_library)
     }
 }
 
-pub unsafe fn pvxs_client_detail_common_base_raw_request(this: *mut CommonBase, arg1: *const Value, )
+pub unsafe fn pvxs_client_detail_common_base_raw_request(this: *mut CommonBase, arg1: *const Value, pvxs_library: Arc<PvxsLibrary>)
 {
-    let pvxs_library = PvxsLibrary::new().expect("Failed to load the PvxsLibrary");
     let func: Symbol<unsafe extern "C" fn(*mut CommonBase, *const Value) -> *const std::os::raw::c_char> = 
     pvxs_library.lib
     .get(if cfg!(target_os = "windows") {
@@ -92,9 +92,8 @@ pub unsafe fn pvxs_client_detail_common_base_raw_request(this: *mut CommonBase, 
     func(this, arg1);
 }
 
-pub unsafe  fn pvxs_client_detail_common_base_field(this: *mut CommonBase,s: *const StdSSOString,)
+pub unsafe  fn pvxs_client_detail_common_base_field(this: *mut CommonBase,s: *const StdSSOString, pvxs_library: Arc<PvxsLibrary>)
 {
-    let pvxs_library = PvxsLibrary::new().expect("Failed to load the PvxsLibrary");
     let func: Symbol<unsafe extern "C" fn(*mut CommonBase, *const StdSSOString) -> *const std::os::raw::c_char> = 
     pvxs_library.lib
     .get(if cfg!(target_os = "windows") {
@@ -108,9 +107,9 @@ pub unsafe  fn pvxs_client_detail_common_base_field(this: *mut CommonBase,s: *co
     func(this, s);
 }
 
-pub unsafe fn pvxs_client_detail_common_base_record(this: *mut CommonBase, key: *const StdSSOString, value: *const ::std::os::raw::c_void, vtype: StoreType,)
+pub unsafe fn pvxs_client_detail_common_base_record(this: *mut CommonBase, key: *const StdSSOString, 
+    value: *const ::std::os::raw::c_void, vtype: StoreType, pvxs_library: Arc<PvxsLibrary>)
 {
-    let pvxs_library = PvxsLibrary::new().expect("Failed to load the PvxsLibrary");
     let func: Symbol<unsafe extern "C" fn(*mut CommonBase, *const StdSSOString, *const ::std::os::raw::c_void, StoreType) -> *const std::os::raw::c_char> = 
     pvxs_library.lib
     .get(if cfg!(target_os = "windows") {
@@ -124,9 +123,8 @@ pub unsafe fn pvxs_client_detail_common_base_record(this: *mut CommonBase, key: 
     func(this, key, value, vtype);
 }
 
-pub unsafe fn pvxs_client_detail_common_base_parse(this: *mut CommonBase, req: *const StdSSOString,)
+pub unsafe fn pvxs_client_detail_common_base_parse(this: *mut CommonBase, req: *const StdSSOString, pvxs_library: Arc<PvxsLibrary>)
 {
-    let pvxs_library = PvxsLibrary::new().expect("Failed to load the PvxsLibrary");
     let func: Symbol<unsafe extern "C" fn(*mut CommonBase, *const StdSSOString) -> *const std::os::raw::c_char> = 
     pvxs_library.lib
     .get(if cfg!(target_os = "windows") {
@@ -140,9 +138,8 @@ pub unsafe fn pvxs_client_detail_common_base_parse(this: *mut CommonBase, req: *
     func(this, req);
 }
 
-pub unsafe fn pvxs_client_detail_common_base_build_req(this: *const CommonBase,) -> Value
+pub unsafe fn pvxs_client_detail_common_base_build_req(this: *const CommonBase, pvxs_library: Arc<PvxsLibrary>) -> Value
 {
-    let pvxs_library = PvxsLibrary::new().expect("Failed to load the PvxsLibrary");
     let func: Symbol<unsafe extern "C" fn(*const CommonBase) -> Value> = 
     pvxs_library.lib
     .get(if cfg!(target_os = "windows") {
@@ -156,9 +153,8 @@ pub unsafe fn pvxs_client_detail_common_base_build_req(this: *const CommonBase,)
     func(this)
 }
 
-pub unsafe fn pvxs_client_detail_common_base_common_base_destructor(this: *mut CommonBase,)
+pub unsafe fn pvxs_client_detail_common_base_common_base_destructor(this: *mut CommonBase, pvxs_library: Arc<PvxsLibrary>)
 {
-    let pvxs_library = PvxsLibrary::new().expect("Failed to load the PvxsLibrary");
     let func: Symbol<unsafe extern "C" fn(*mut CommonBase) -> *const std::os::raw::c_char> = 
     pvxs_library.lib
     .get(if cfg!(target_os = "windows") {
