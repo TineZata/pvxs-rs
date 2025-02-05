@@ -1,21 +1,18 @@
 use std::sync::Arc;
-use crate::std_types::{GetBuilder, StdSSOString};
+//use crate::std_types::{GetBuilder, StdSSOString};
 use crate::version::Version;
-use crate::pvxs_library::PvxsLibrary;
-use crate::client::{Context, Config};
+use crate::bin::LoadLib;
+//use crate::client::{Context, Config};
 
 /// Returns the version of the PVXS library as a string.
 /// 
 /// ## Example:
 /// ```rust
-/// use std::sync::Arc;
-/// let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
-/// let version = unsafe { Version::version_str(Arc::clone(&pvxs_library)) };
+/// let version: String = pvxs::get_version_str();
 /// println!("PVXS Version: {}", version);
 /// ```
-/// 
 pub fn get_version_str() -> String {
-    let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
+    let pvxs_library = Arc::new(LoadLib::new().expect("Failed to load the lib or dll"));
     let version = unsafe { Version::version_str(Arc::clone(&pvxs_library)) };
     if version.is_empty(){
          "Version string should not be empty".to_string()
@@ -24,7 +21,7 @@ pub fn get_version_str() -> String {
     }
 }
 
-/// Returns a new context created from the environment.
+/*/// Returns a new context created from the environment.
 /// 
 /// ## Example:
 /// ```rust
@@ -79,4 +76,4 @@ pub fn get_context_info(name: String) -> GetBuilder {
         Context::info(&ctx, Arc::clone(&pvxs_library), std_string )
     };
     info
-}
+}*/

@@ -1,5 +1,5 @@
 use std::{ffi::CStr, sync::Arc};
-use crate::pvxs_library::PvxsLibrary;
+use crate::bin::LoadLib;
 
 #[repr(C)]
 pub struct Version {
@@ -9,7 +9,7 @@ impl Version {
     /// Resolve the version string from the PVXS library
     /// 
     /// Returns a rust string representation of the version
-    pub unsafe fn version_str(pvxs_library: Arc<PvxsLibrary>) -> String{
+    pub unsafe fn version_str(pvxs_library: Arc<LoadLib>) -> String{
         let str_ptr = pvxs_version_str(pvxs_library);
         if str_ptr.is_null() {
             return "Unknown PVXS version".to_string();
@@ -20,19 +20,19 @@ impl Version {
     /// Resolve the version integer from the PVXS library
     /// 
     /// Returns the version as an unsigned long
-    pub unsafe fn version_int(pvxs_library: Arc<PvxsLibrary>) -> ::std::os::raw::c_ulong {
+    pub unsafe fn version_int(pvxs_library: Arc<LoadLib>) -> ::std::os::raw::c_ulong {
         pvxs_version_int(pvxs_library)
     }
 
     /// Resolve the ABI version integer from the PVXS library
     /// 
     /// Returns the ABI version as an unsigned long
-    pub unsafe fn version_abi_int(pvxs_library: Arc<PvxsLibrary>) -> ::std::os::raw::c_ulong {
+    pub unsafe fn version_abi_int(pvxs_library: Arc<LoadLib>) -> ::std::os::raw::c_ulong {
         pvxs_version_abi_int(pvxs_library)
     }
 }
 
-pub unsafe fn pvxs_version_str(pvxs_library: Arc<PvxsLibrary>) -> *const ::std::os::raw::c_char {
+pub unsafe fn pvxs_version_str(pvxs_library: Arc<LoadLib>) -> *const ::std::os::raw::c_char {
     let func: libloading::Symbol<unsafe extern "C" fn() -> *const std::os::raw::c_char> = 
     pvxs_library.lib
     .get(if cfg!(target_os = "windows") {
@@ -46,7 +46,7 @@ pub unsafe fn pvxs_version_str(pvxs_library: Arc<PvxsLibrary>) -> *const ::std::
     func()
 }
 
-pub unsafe fn pvxs_version_int(pvxs_library: Arc<PvxsLibrary>) -> ::std::os::raw::c_ulong {
+pub unsafe fn pvxs_version_int(pvxs_library: Arc<LoadLib>) -> ::std::os::raw::c_ulong {
     let func: libloading::Symbol<unsafe extern "C" fn() -> ::std::os::raw::c_ulong> = 
     pvxs_library.lib
     .get(if cfg!(target_os = "windows") {
@@ -60,7 +60,7 @@ pub unsafe fn pvxs_version_int(pvxs_library: Arc<PvxsLibrary>) -> ::std::os::raw
     func()
 }
 
-pub unsafe fn pvxs_version_abi_int(pvxs_library: Arc<PvxsLibrary>) -> ::std::os::raw::c_ulong {
+pub unsafe fn pvxs_version_abi_int(pvxs_library: Arc<LoadLib>) -> ::std::os::raw::c_ulong {
     let func: libloading::Symbol<unsafe extern "C" fn() -> ::std::os::raw::c_ulong> = 
     pvxs_library.lib
     .get(if cfg!(target_os = "windows") {

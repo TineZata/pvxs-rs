@@ -1,11 +1,11 @@
 use libloading::{Library, Symbol};
 
 /// Struct resposible for loading the PVXS dll and lib files.
-pub struct PvxsLibrary {
+pub struct LoadLib {
     pub lib: Library,
 }
 
-impl PvxsLibrary {
+impl LoadLib {
     /// Safely load the PVXS shared library.
     pub fn new() -> Result<Self, String> {
         let lib_name = if cfg!(target_os = "windows") {
@@ -33,7 +33,7 @@ impl PvxsLibrary {
     }
 }
 
-impl Drop for PvxsLibrary {
+impl Drop for LoadLib {
     fn drop(&mut self) {
         // Dummy drop implementation
     }
