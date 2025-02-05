@@ -1,3 +1,5 @@
+pub mod detail;
+
 use std::ffi::c_char;
 use std::sync::Arc;
 use libloading::Symbol;
