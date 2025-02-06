@@ -21,6 +21,32 @@ pub fn get_version_str() -> String {
     }
 }
 
+/// Returns the version of the PVXS library as a u32.
+/// 
+/// ## Example:
+/// 
+/// ```rust
+/// let version: u32 = pvxs::get_version_int();
+/// println!("PVXS Version: {}", version);
+/// ```
+pub fn get_version_int() -> u32 {
+    let pvxs_library = Arc::new(LoadLib::new().expect("Failed to load the lib or dll"));
+    unsafe { Version::version_int(Arc::clone(&pvxs_library)) as u32 }
+}
+
+/// Returns the ABI version of the PVXS library as a u32.
+/// 
+/// ## Example:
+/// 
+/// ```rust
+/// let version: u32 = pvxs::get_version_abi_int();
+/// println!("PVXS ABI Version: {}", version);
+/// ```
+pub fn get_version_abi_int() -> u32 {
+    let pvxs_library = Arc::new(LoadLib::new().expect("Failed to load the lib or dll"));
+    unsafe { Version::version_abi_int(Arc::clone(&pvxs_library)) as u32 }
+}
+
 /*/// Returns a new context created from the environment.
 /// 
 /// ## Example:

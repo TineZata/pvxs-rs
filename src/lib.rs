@@ -28,6 +28,8 @@ pub mod array; // Array types for PVXS
 };*/
 pub use wrapper::{
     get_version_str,
+    get_version_int,
+    get_version_abi_int,
     //get_context_from_env,
     //get_client_config,
     //get_context_info,
