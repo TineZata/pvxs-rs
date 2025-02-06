@@ -173,7 +173,7 @@ impl Context {
         pvxs_client_context_close(self, pvxs_library)
     }
     #[inline]
-    pub unsafe fn hurryUp(&mut self, pvxs_library: Arc<LoadLib>) {
+    pub unsafe fn hurry_up(&mut self, pvxs_library: Arc<LoadLib>) {
         pvxs_client_context_hurry_up(self, pvxs_library)
     }
     #[inline]
