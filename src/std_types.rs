@@ -125,3 +125,34 @@ impl<T> ::std::cmp::PartialEq for __UnionField<T> {
     }
 }
 impl<T> ::std::cmp::Eq for __UnionField<T> {}
+
+#[repr(C)]
+pub struct StdVectorVal {
+    pub _first: StdVectorValPointer,
+    pub _last: StdVectorValPointer,
+    pub _end: StdVectorValPointer,
+}
+pub type StdVectorValValueType = __OpaqueArray<u8, 0usize>;
+pub type StdVectorValSizeType = __OpaqueArray<u8, 0usize>;
+pub type StdVectorValDifferenceType = __OpaqueArray<u8, 0usize>;
+pub type StdVectorValPointer = __OpaqueArray<u8, 0usize>;
+pub type StdVectorValConstPointer = __OpaqueArray<u8, 0usize>;
+pub type StdVectorValReference = *mut StdVectorValValueType;
+pub type StdVectorValConstReference = *const StdVectorValValueType;
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct StdVector {
+    pub _pair:  [u64; 3usize],
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct StdMap {
+    pub _base: StdTree,
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct StdTree {
+    pub _pair: u8,
+}

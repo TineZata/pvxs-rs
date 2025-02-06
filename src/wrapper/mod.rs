@@ -1,4 +1,6 @@
 use std::sync::Arc;
+use crate::client::config::Config;
+use crate::client::context::Context;
 //use crate::std_types::{GetBuilder, StdSSOString};
 use crate::version::Version;
 use crate::bin::LoadLib;
@@ -47,7 +49,7 @@ pub fn get_version_abi_int() -> u32 {
     unsafe { Version::version_abi_int(Arc::clone(&pvxs_library)) as u32 }
 }
 
-/*/// Returns a new context created from the environment.
+/// Returns a new context created from the environment.
 /// 
 /// ## Example:
 /// ```rust
@@ -57,7 +59,7 @@ pub fn get_version_abi_int() -> u32 {
 /// ```
 ///
 pub fn get_context_from_env() -> Context {
-    let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
+    let pvxs_library = Arc::new(LoadLib::new().expect("Failed to load the PvxsLibrary"));
     unsafe { Context::from_env(Arc::clone(&pvxs_library)) }
 }
 
@@ -87,14 +89,15 @@ pub fn get_context_from_env() -> Context {
 /// 
 /// ```
 /// 
-pub fn get_client_config(pvxs_library: Arc<PvxsLibrary>) -> Config {
+pub fn get_client_config() -> Config {
+    let pvxs_library = Arc::new(LoadLib::new().expect("Failed to load the PvxsLibrary"));
     let ctx: Context = unsafe { Context::from_env(Arc::clone(&pvxs_library)) };
     let config: *const Config = unsafe { Context::config(&ctx, Arc::clone(&pvxs_library)) };
     let config_obj: &Config = unsafe { &*config };
     config_obj.clone()
 }
 
-pub fn get_context_info(name: String) -> GetBuilder {
+/*pub fn get_context_info(name: String) -> GetBuilder {
     let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
     let ctx: Context = unsafe { Context::from_env(Arc::clone(&pvxs_library)) };
     let std_string = &StdSSOString::from_rust_string(name);
