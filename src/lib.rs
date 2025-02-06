@@ -11,10 +11,13 @@
 pub mod bin; // Raw bindings to the PVXS library
 pub mod version; // Version information for the wrapper
 pub mod std_types; // Standard types for PVXS
-//pub mod client; // Client context for PVXS
+pub mod client; // Client context for PVXS
 pub mod wrapper; // Wrapper for the PVXS library
 pub mod epics; // EPICS types for PVXS
 pub mod array; // Array types for PVXS
+pub mod value; // Value types for PVXS
+pub mod typecode; // Typecode types for PVXS
+pub mod storetype; // Storetype types for PVXS
 
 
 // Publicly exposed functions or types from submodules

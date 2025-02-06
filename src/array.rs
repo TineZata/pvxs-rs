@@ -2,35 +2,35 @@ use std::sync::Arc;
 use crate::{bin, std_types::StdSharedPtr};
 
 /// Untyped
-pub const PVXS_ARRAY_TYPE_NULL: PvxsArrayType = 255;
+pub const PVXS_ARRAY_TYPE_NULL: ArrayType = 255;
 /// bool
-pub const PVXS_ARRAY_TYPE_BOOL: PvxsArrayType = 8;
+pub const PVXS_ARRAY_TYPE_BOOL: ArrayType = 8;
 /// int8_t
-pub const PVXS_ARRAY_TYPE_INT8: PvxsArrayType = 40;
+pub const PVXS_ARRAY_TYPE_INT8: ArrayType = 40;
 /// int16_t
-pub const PVXS_ARRAY_TYPE_INT16: PvxsArrayType = 41;
+pub const PVXS_ARRAY_TYPE_INT16: ArrayType = 41;
 /// int32_t
-pub const PVXS_ARRAY_TYPE_INT32: PvxsArrayType = 42;
+pub const PVXS_ARRAY_TYPE_INT32: ArrayType = 42;
 /// int64_t
-pub const PVXS_ARRAY_TYPE_INT64: PvxsArrayType = 43;
+pub const PVXS_ARRAY_TYPE_INT64: ArrayType = 43;
 /// uint8_t
-pub const PVXS_ARRAY_TYPE_UINT8: PvxsArrayType = 44;
+pub const PVXS_ARRAY_TYPE_UINT8: ArrayType = 44;
 /// uint16_t
-pub const PVXS_ARRAY_TYPE_UINT16: PvxsArrayType = 45;
+pub const PVXS_ARRAY_TYPE_UINT16: ArrayType = 45;
 /// uint32_t
-pub const PVXS_ARRAY_TYPE_UINT32: PvxsArrayType = 46;
+pub const PVXS_ARRAY_TYPE_UINT32: ArrayType = 46;
 /// uint64_t
-pub const PVXS_ARRAY_TYPE_UINT64: PvxsArrayType = 47;
+pub const PVXS_ARRAY_TYPE_UINT64: ArrayType = 47;
 /// float
-pub const PVXS_ARRAY_TYPE_FLOAT32: PvxsArrayType = 74;
+pub const PVXS_ARRAY_TYPE_FLOAT32: ArrayType = 74;
 /// double
-pub const PVXS_ARRAY_TYPE_FLOAT64: PvxsArrayType = 75;
+pub const PVXS_ARRAY_TYPE_FLOAT64: ArrayType = 75;
 /// std::string
-pub const PVXS_ARRAY_TYPE_STRING: PvxsArrayType = 104;
+pub const PVXS_ARRAY_TYPE_STRING: ArrayType = 104;
 /// Value
-pub const PVXS_ARRAY_TYPE_VALUE: PvxsArrayType = 136;
+pub const PVXS_ARRAY_TYPE_VALUE: ArrayType = 136;
 /// Identify real array type in void specializations of shared_array.\n! @see shared_array::original_type()"]
-pub type PvxsArrayType = u8;
+pub type ArrayType = u8;
 
 /// std::vector-like contiguous array of items passed by reference.
 /// 
@@ -58,22 +58,22 @@ pub type PvxsArrayType = u8;
 /// ```
 #[repr(C)]
 #[derive(Debug)]
-pub struct PvxsSharedArray {
-    pub _base: PvxsDetailSaBase,
+pub struct SharedArray {
+    pub _base: DetailSaBase,
 }
-pub type PvxsSharedArrayBaseT = PvxsDetailSaBase;
+pub type PvxsSharedArrayBaseT = DetailSaBase;
 
 #[repr(C)]
 #[derive(Debug)]
-pub struct PvxsDetailSaBase {
+pub struct DetailSaBase {
     pub _data: StdSharedPtr,
     pub _count: usize,
 }
 
 /// Return storage size (aka. sizeof() ) for array element type
 /// @throws std::logic_error for invalid types.
-pub unsafe fn pvxs_element_size(pvxs_library: Arc<bin::LoadLib>, type_: PvxsArrayType) -> usize {
-    let func: libloading::Symbol<unsafe extern "C" fn(PvxsArrayType) -> usize> = 
+pub unsafe fn pvxs_element_size(pvxs_library: Arc<bin::LoadLib>, type_: ArrayType) -> usize {
+    let func: libloading::Symbol<unsafe extern "C" fn(ArrayType) -> usize> = 
     pvxs_library.lib
     .get(if cfg!(target_os = "windows") {
         b"?elementSize@pvxs@@YA_KW4ArrayType@1@@Z"
@@ -87,8 +87,8 @@ pub unsafe fn pvxs_element_size(pvxs_library: Arc<bin::LoadLib>, type_: PvxsArra
 }
 
 /// Return a void array usable for the given storage type
-pub unsafe fn pvxs_alloc_array(pvxs_library: Arc<bin::LoadLib>, type_: PvxsArrayType, count: usize) -> PvxsSharedArray {
-    let func: libloading::Symbol<unsafe extern "C" fn(PvxsArrayType, usize) -> PvxsSharedArray> = 
+pub unsafe fn pvxs_alloc_array(pvxs_library: Arc<bin::LoadLib>, type_: ArrayType, count: usize) -> SharedArray {
+    let func: libloading::Symbol<unsafe extern "C" fn(ArrayType, usize) -> SharedArray> = 
     pvxs_library.lib
     .get(if cfg!(target_os = "windows") {
         b"?allocArray@pvxs@@YA?AV?$shared_array@XX@1@W4ArrayType@1@_K@Z"
