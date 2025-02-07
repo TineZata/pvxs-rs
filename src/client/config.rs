@@ -1,4 +1,4 @@
-use crate::std_types::{StdMap, StdVector};
+use crate::std_types::{StdMap, StdString};
 
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -8,15 +8,15 @@ pub struct Config {
     /// Entries may take the forms:
     /// - ``<ipaddr>[:<port#>]``
     /// - ``<ipmultiaddr>[:<port>][,<ttl>][@<ifaceaddr>]``
-    pub address_list: StdVector,
+    pub address_list: StdString,
     /// List of local interface addresses on which beacons may be received.
     /// Also constrains autoAddrList to only consider broadcast addresses of listed interfaces.
     /// Empty implies wildcard 0.0.0.0
-    pub interfaces: StdVector,
+    pub interfaces: StdString,
     /// List of TCP name servers.
     /// Client context will maintain connections, and send search requests, to these servers.
     /// @since 0.2.0
-    pub name_servers: StdVector,
+    pub name_servers: StdString,
     /// UDP port to bind.  Default is 5076.  May be zero, cf. Server::config() to find allocated port.
     pub udp_port: ::std::os::raw::c_ushort,
     /// Default TCP port for name servers\n! @since 0.2.0
@@ -30,7 +30,7 @@ pub struct Config {
     pub udp: bool,
 }
 pub type ConfigDefsT = StdMap;
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+/*#[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
     ["Size of pvxs_client_Config"][::std::mem::size_of::<Config>() - 96usize];
     ["Alignment of pvxs_client_Config"][::std::mem::align_of::<Config>() - 8usize];
@@ -52,7 +52,7 @@ const _: () = {
         [::std::mem::offset_of!(Config, be) - 88usize];
     ["Offset of field: pvxs_client_Config::UDP"]
         [::std::mem::offset_of!(Config, udp) - 89usize];
-};
+};*/
 unsafe extern "C" {
     #[doc = "! update using defined EPICS_PVA* environment variables"]
     #[link_name = "\u{1}?applyEnv@Config@client@pvxs@@QEAAAEAU123@XZ"]

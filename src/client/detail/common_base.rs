@@ -21,7 +21,7 @@ pub struct CommonBase {
 pub struct CommonBaseReq {
     _unused: [u8; 0],
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+/*#[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
     ["Size of pvxs_client_detail_CommonBase"]
         [::std::mem::size_of::<CommonBase>() - 104usize];
@@ -41,29 +41,7 @@ const _: () = {
         [::std::mem::offset_of!(CommonBase, _autoexec) - 100usize];
     ["Offset of field: pvxs_client_detail_CommonBase::_syncCancel"]
         [::std::mem::offset_of!(CommonBase, _sync_cancel) - 101usize];
-};
-
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of pvxs_client_detail_CommonBase"]
-        [::std::mem::size_of::<CommonBase>() - 104usize];
-    ["Alignment of pvxs_client_detail_CommonBase"]
-        [::std::mem::align_of::<CommonBase>() - 8usize];
-    ["Offset of field: pvxs_client_detail_CommonBase::ctx"]
-        [::std::mem::offset_of!(CommonBase, ctx) - 0usize];
-    ["Offset of field: pvxs_client_detail_CommonBase::_name"]
-        [::std::mem::offset_of!(CommonBase, _name) - 16usize];
-    ["Offset of field: pvxs_client_detail_CommonBase::_server"]
-        [::std::mem::offset_of!(CommonBase, _server) - 48usize];
-    ["Offset of field: pvxs_client_detail_CommonBase::req"]
-        [::std::mem::offset_of!(CommonBase, req) - 80usize];
-    ["Offset of field: pvxs_client_detail_CommonBase::_prio"]
-        [::std::mem::offset_of!(CommonBase, _prio) - 96usize];
-    ["Offset of field: pvxs_client_detail_CommonBase::_autoexec"]
-        [::std::mem::offset_of!(CommonBase, _autoexec) - 100usize];
-    ["Offset of field: pvxs_client_detail_CommonBase::_syncCancel"]
-        [::std::mem::offset_of!(CommonBase, _sync_cancel) - 101usize];
-};
+};*/
 
 impl CommonBase {
     pub unsafe fn _raw_request(&mut self, arg1: *const Value, pvxs_library: Arc<LoadLib>) {

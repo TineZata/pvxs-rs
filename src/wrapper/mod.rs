@@ -57,7 +57,6 @@ pub fn get_version_abi_int() -> u32 {
 /// 
 /// let ctx: Context = pvxs::get_context_from_env();
 /// ```
-///
 pub fn get_context_from_env() -> Context {
     let pvxs_library = Arc::new(LoadLib::new().expect("Failed to load the PvxsLibrary"));
     unsafe { Context::from_env(Arc::clone(&pvxs_library)) }
@@ -67,34 +66,23 @@ pub fn get_context_from_env() -> Context {
 /// 
 /// ## Example:
 /// ```rust
-/// use std::sync::Arc;
-/// use pvxs::pvxs_library::PvxsLibrary;
 /// use pvxs::client::Config;
 /// 
-/// let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
-/// let config: Config = pvxs::get_client_config(Arc::clone(&pvxs_library));
-/// let addr = unsafe { config.address_list.to_rust_string() };
-/// println!("Address list: {}", addr);
-/// 
-/// let interfaces = unsafe { config.interfaces.to_rust_string() };
-/// println!("Interfaces: {}", interfaces);
-/// 
-/// let name_servers = unsafe { config.name_servers.to_rust_string() };
-/// println!("Name servers: {}", name_servers);
-/// 
+/// let config: Config = pvxs::get_client_config();
+/// println!("Address list: {}", unsafe { config.address_list.to_rust_string_lossy() });
+/// println!("Interfaces: {}", unsafe { config.interfaces.to_rust_string_lossy() });
+/// println!("Name servers: {}", unsafe { config.name_servers.to_rust_string_lossy() });
 /// println!("UDP port: {}", config.udp_port);
 /// println!("TCP port: {}", config.tcp_port);
 /// println!("TCP timeout: {}", config.tcp_timeout);
 /// println!("Auto address list: {}", if config.auto_addr_list { "true" } else { "false" });
-/// 
 /// ```
-/// 
 pub fn get_client_config() -> Config {
     let pvxs_library = Arc::new(LoadLib::new().expect("Failed to load the PvxsLibrary"));
     let ctx: Context = unsafe { Context::from_env(Arc::clone(&pvxs_library)) };
     let config: *const Config = unsafe { Context::config(&ctx, Arc::clone(&pvxs_library)) };
-    let config_obj: &Config = unsafe { &*config };
-    config_obj.clone()
+    let config: &Config = unsafe { &*config };
+    config.clone()
 }
 
 /*pub fn get_context_info(name: String) -> GetBuilder {

@@ -1,3 +1,5 @@
+use std::marker::{PhantomData, PhantomPinned};
+
 
 pub type StdAtomicCounterT = ::std::os::raw::c_ulong;
 
@@ -41,12 +43,79 @@ pub struct StdSharedPtr {
 pub type StdSharedPtrMybase = StdPtrBase;
 pub type StdSharedPtrWeakType = StdWeakPtr;
 
-#[repr(C)]
-#[derive(Debug)]
+#[repr(C, align(8))]
+#[derive(Debug, Clone)]
 pub struct StdBasicString {
-    pub _pair: u8,
+    /// Pointer to the start of string data
+    pub begin: *const u8,  
+    /// Size of the string
+    /// 
+    /// Note:  
+    ///     Don't rely on this value to be the length of the string.
+    ///     Always use `to_rust_string` to convert to a Rust `String`.
+    pub size: usize,
+    /// Capacity of the allocated buffer
+    /// 
+    /// Note:
+    ///     Don't rely on this value to be the capacity of the string.
+    ///     Always use `to_rust_string` to convert to a Rust `String`.
+    pub capacity: usize,
 }
-pub type StdString = [u64; 4usize];
+
+impl StdBasicString {
+    /// Converts the `StdString` to a Rust `String`.
+    pub unsafe fn to_rust_string_lossy(&self) -> String {
+        // Ensure the pointer is not null and the size is valid
+        if self.begin.is_null() || self.size == 0 {
+            return String::new();
+        }
+
+        if self.size > 1_000  {
+            // Prevent indexing a huge string... calculate the length manually
+            let mut len = 0;
+            while *self.begin.add(len) != 0 && len < self.size {
+                len += 1;
+            }
+            // Create a slice from the raw pointer and length
+            let slice = std::slice::from_raw_parts(self.begin, len);
+            // Convert the slice to a Rust String
+            return String::from_utf8_lossy(slice).into_owned()
+        }
+
+        // Create a slice from the raw pointer and length
+        let slice = std::slice::from_raw_parts(self.begin, self.size);
+
+        // Convert the slice to a String
+        String::from_utf8_lossy(slice).into_owned()
+    }
+
+    /// Creates an `StdString` from a Rust `String`.
+    pub fn from_rust_string(s: String) -> Self {
+        let size = s.len();
+        let capacity = s.capacity();
+        let begin = s.as_ptr();
+
+        // Prevent Rust from freeing the string while `StdString` exists
+        std::mem::forget(s);
+
+        Self {
+            begin,
+            size,
+            capacity,
+        }
+    }
+
+    /// Reclaims ownership of the original Rust `String`.
+    ///
+    /// This is unsafe because it assumes the `StdString` was created
+    /// from a Rust `String` using `from_rust_string`.
+    pub unsafe fn into_rust_string(self) -> String {
+        // Reclaim ownership of the original Rust String
+        String::from_raw_parts(self.begin as *mut u8, self.size, self.capacity) 
+    }
+}
+
+pub type StdString = StdBasicString;
 pub type StdWstring = StdBasicString;
 pub type StdU16string = StdBasicString;
 pub type StdU32string = StdBasicString;
@@ -139,11 +208,18 @@ pub type StdVectorValPointer = __OpaqueArray<u8, 0usize>;
 pub type StdVectorValConstPointer = __OpaqueArray<u8, 0usize>;
 pub type StdVectorValReference = *mut StdVectorValValueType;
 pub type StdVectorValConstReference = *const StdVectorValValueType;
-#[repr(C)]
-#[derive(Debug, Clone)]
-pub struct StdVector {
-    pub _pair:  [u64; 3usize],
+#[repr(C, align(8))]
+pub struct StdBasicVector<T> {
+    // A thing, because repr(C) structs are not allowed to consist exclusively
+    // of PhantomData fields.
+    pub _void:  [u64; 3usize],
+    // The conceptual vector elements to ensure that autotraits are propagated
+    // correctly, e.g. CxxVector is UnwindSafe iff T is.
+    _elements: PhantomData<[T]>,
+    // Prevent unpin operation from Pin<&mut CxxVector<T>> to &mut CxxVector<T>.
+    _pinned: PhantomData<PhantomPinned>,
 }
+pub type StdVector<T> = StdBasicVector<T>;
 
 #[repr(C)]
 #[derive(Debug)]
