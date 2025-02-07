@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use crate::client::config::Config;
 use crate::client::context::Context;
+use crate::client::get_builder::GetBuilder;
+use crate::std_types::StdString32;
 //use crate::std_types::{GetBuilder, StdSSOString};
 use crate::version::Version;
 use crate::bin::LoadLib;
@@ -86,11 +88,13 @@ pub fn get_client_config() -> Config {
 }
 
 /*pub fn get_context_info(name: String) -> GetBuilder {
-    let pvxs_library = Arc::new(PvxsLibrary::new().expect("Failed to load the PvxsLibrary"));
+    let pvxs_library = Arc::new(LoadLib::new().expect("Failed to load the PvxsLibrary"));
     let ctx: Context = unsafe { Context::from_env(Arc::clone(&pvxs_library)) };
-    let std_string = &StdSSOString::from_rust_string(name);
+    let std_string = &StdString32::from_rust_string(name);
     let info: GetBuilder = unsafe {
         Context::info(&ctx, Arc::clone(&pvxs_library), std_string )
     };
     info
 }*/
+
+

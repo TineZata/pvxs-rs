@@ -30,7 +30,7 @@ pub struct Config {
     pub udp: bool,
 }
 pub type ConfigDefsT = StdMap;
-/*#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
     ["Size of pvxs_client_Config"][::std::mem::size_of::<Config>() - 96usize];
     ["Alignment of pvxs_client_Config"][::std::mem::align_of::<Config>() - 8usize];
@@ -52,14 +52,14 @@ const _: () = {
         [::std::mem::offset_of!(Config, be) - 88usize];
     ["Offset of field: pvxs_client_Config::UDP"]
         [::std::mem::offset_of!(Config, udp) - 89usize];
-};*/
+};
 unsafe extern "C" {
-    #[doc = "! update using defined EPICS_PVA* environment variables"]
+    #[doc = "Update using defined EPICS_PVA* environment variables"]
     #[link_name = "\u{1}?applyEnv@Config@client@pvxs@@QEAAAEAU123@XZ"]
     pub fn pvxs_client_Config_applyEnv(this: *mut Config) -> *mut Config;
 }
 unsafe extern "C" {
-    #[doc = "! update with definitions as with EPICS_PVA* environment variables\n! Process environment is not changed."]
+    #[doc = "Update with definitions as with EPICS_PVA* environment variables\n! Process environment is not changed."]
     #[link_name = "\u{1}?applyDefs@Config@client@pvxs@@QEAAAEAU123@AEBV?$map@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V12@U?$less@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@V?$allocator@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V12@@std@@@2@@std@@@Z"]
     pub fn pvxs_client_Config_applyDefs(
         this: *mut Config,
@@ -67,7 +67,7 @@ unsafe extern "C" {
     ) -> *mut Config;
 }
 unsafe extern "C" {
-    #[doc = "! extract definitions with environment variable names as keys.\n! Process environment is not changed."]
+    #[doc = "Extract definitions with environment variable names as keys.\n! Process environment is not changed."]
     #[link_name = "\u{1}?updateDefs@Config@client@pvxs@@QEBAXAEAV?$map@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V12@U?$less@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@V?$allocator@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V12@@std@@@2@@std@@@Z"]
     pub fn pvxs_client_Config_updateDefs(
         this: *const Config,

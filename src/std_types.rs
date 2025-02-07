@@ -1,6 +1,4 @@
 use std::marker::{PhantomData, PhantomPinned};
-
-
 pub type StdAtomicCounterT = ::std::os::raw::c_ulong;
 
 #[repr(C)]
@@ -142,6 +140,82 @@ pub struct StdStringValBxty {
     pub bindgen_union_field: u64,
 }
 
+#[repr(C)]
+pub union ShortStringOptimisation {
+    /// Capacity of the allocated buffer
+    /// 
+    /// Note:
+    ///     Don't rely on this value to be the capacity of the string.
+    ///     Always use `to_rust_string` to convert to a Rust `String`.
+    pub capacity: usize,
+    /// Buffer for short strings
+    pub short_buffer: [u8; 16usize],
+}
+
+impl Clone for ShortStringOptimisation {
+    fn clone(&self) -> Self {
+        unsafe { std::ptr::read(self) }
+    }
+}
+
+impl core::fmt::Debug for ShortStringOptimisation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        unsafe {
+            write!(f, "ShortStringOptimisation {{ capacity: {}, short_buffer: {:?} }}", self.capacity, &self.short_buffer)
+        }
+    }
+}
+
+#[repr(C, align(8))]
+#[derive(Debug, Clone)]
+pub struct StdString32 {
+    pub begin: *const u8,
+    pub size: usize,
+    pub cap_or_sso: ShortStringOptimisation,
+}
+
+impl StdString32 {
+    pub unsafe fn to_rust_string(&self) -> String {
+        // Ensure the pointer is not null and the size is valid
+        if self.begin.is_null() || self.size == 0 {
+            return String::new();
+        }
+
+        if self.size > 1_000  {
+            // Prevent indexing a huge string... calculate the length manually
+            let mut len = 0;
+            while *self.begin.add(len) != 0 && len < self.size {
+                len += 1;
+            }
+            // Create a slice from the raw pointer and length
+            let slice = std::slice::from_raw_parts(self.begin, len);
+            // Convert the slice to a Rust String
+            return String::from_utf8_lossy(slice).into_owned()
+        }
+
+        // Create a slice from the raw pointer and length
+        let slice = std::slice::from_raw_parts(self.begin, self.size);
+
+        // Convert the slice to a String
+        String::from_utf8_lossy(slice).into_owned()
+    }
+
+    pub fn from_rust_string(s: String) -> Self {
+        let size = s.len();
+        let capacity = s.capacity();
+        let begin = s.as_ptr();
+
+        // Prevent Rust from freeing the string while `StdString` exists
+        std::mem::forget(s);
+
+        Self {
+            begin,
+            size,
+            cap_or_sso: ShortStringOptimisation { capacity },
+        }
+    }
+}
+
 #[derive(PartialEq, Copy, Clone, Debug, Hash)]
 #[repr(C)]
 pub struct __OpaqueArray<T: Copy, const N: usize>(pub [T; N]);
@@ -231,4 +305,61 @@ pub struct StdMap {
 #[derive(Debug)]
 pub struct StdTree {
     pub _pair: u8,
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct StdRuntimeError {
+    pub _base: StdException,
+}
+
+pub type StdRuntimeErrorBase = StdException;
+
+#[repr(C)]
+pub struct StdExceptionVtable(::std::os::raw::c_void);
+#[repr(C)]
+#[derive(Debug)]
+pub struct StdException {
+    pub vtable_: *const StdExceptionVtable,
+    pub _data: StdExceptionData,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of std_exception"][::std::mem::size_of::<StdException>() - 24usize];
+    ["Alignment of std_exception"][::std::mem::align_of::<StdException>() - 8usize];
+    ["Offset of field: std_exception::_Data"][::std::mem::offset_of!(StdException, _data) - 8usize];
+};
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct StdExceptionData {
+    pub _what: *const ::std::os::raw::c_char,
+    pub _do_free: bool,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of __std_exception_data"][::std::mem::size_of::<StdExceptionData>() - 16usize];
+    ["Alignment of __std_exception_data"][::std::mem::align_of::<StdExceptionData>() - 8usize];
+    ["Offset of field: __std_exception_data::_What"]
+        [::std::mem::offset_of!(StdExceptionData, _what) - 0usize];
+    ["Offset of field: __std_exception_data::_DoFree"]
+        [::std::mem::offset_of!(StdExceptionData, _do_free) - 8usize];
+};
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct StdLogicError {
+    pub _base: StdException,
+}
+pub type StdLogicErrorBase = StdException;
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of std_logic_error"][::std::mem::size_of::<StdLogicError>() - 24usize];
+    ["Alignment of std_logic_error"][::std::mem::align_of::<StdLogicError>() - 8usize];
+};
+
+#[repr(C, align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct StdFunction64 {
+    pub _address: [u8; 64usize],
 }
