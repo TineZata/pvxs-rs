@@ -26,7 +26,7 @@ pub struct StdWeakPtr {
 }
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct StdPtrBase {
     pub _ptr: *mut StdPtrBaseElementType,
     pub _rep: *mut StdRefCountBase,
@@ -34,7 +34,7 @@ pub struct StdPtrBase {
 pub type StdPtrBaseElementType = StdRemoveExtentT;
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct StdSharedPtr {
     pub _base: StdPtrBase,
 }
@@ -175,6 +175,13 @@ pub struct StdString32 {
 }
 
 impl StdString32 {
+    pub fn new() -> Self {
+        Self {
+            begin: std::ptr::null(),
+            size: 0,
+            cap_or_sso: ShortStringOptimisation { capacity: 0 },
+        }
+    }
     pub unsafe fn to_rust_string(&self) -> String {
         // Ensure the pointer is not null and the size is valid
         if self.begin.is_null() || self.size == 0 {
@@ -363,3 +370,12 @@ const _: () = {
 pub struct StdFunction64 {
     pub _address: [u8; 64usize],
 }
+
+impl StdFunction64 {
+    pub fn new() -> Self {
+        Self {
+            _address: [0; 64usize],
+        }
+    }
+}
+

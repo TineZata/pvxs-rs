@@ -1,8 +1,10 @@
+use std::ptr::null;
 use std::sync::Arc;
 use crate::client::config::Config;
+use crate::client::connect_builder::ConnectBuilder;
 use crate::client::context::Context;
 use crate::client::get_builder::GetBuilder;
-use crate::std_types::StdString32;
+use crate::std_types::{StdFunction64, StdString32};
 //use crate::std_types::{GetBuilder, StdSSOString};
 use crate::version::Version;
 use crate::bin::LoadLib;
@@ -97,4 +99,23 @@ pub fn get_client_config() -> Config {
     info
 }*/
 
+pub fn client_is_pv_connected(name: String) -> bool {
+    let pvxs_library = Arc::new(LoadLib::new().expect("Failed to load the PvxsLibrary"));
+    let ctx: Context = unsafe { Context::from_env(Arc::clone(&pvxs_library)) };
+    let std_string = StdString32::from_rust_string(name);
+    let mut connect = ConnectBuilder::new(ctx.pvt, 
+        std_string.clone(), 
+        StdString32::new(), 
+        StdFunction64::new(), 
+        StdFunction64::new(), 
+        false);
+
+    let conn_ptr: StdFunction64 = unsafe { connect.exec(Arc::clone(&pvxs_library)) };
+    if conn_ptr._address[0] == 0 {
+        false
+    } else {
+        true
+    }
+    
+}
 

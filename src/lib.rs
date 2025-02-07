@@ -37,5 +37,6 @@ pub use wrapper::{
     get_context_from_env,
     get_client_config,
     //get_context_info,
+    client_is_pv_connected,
 };
 

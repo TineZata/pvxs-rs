@@ -1,3 +1,4 @@
+use core::sync;
 use std::sync::Arc;
 use libloading::Symbol;
 
@@ -52,6 +53,21 @@ pub unsafe fn pvxs_client_connect_builder_exec(this: *mut ConnectBuilder, pvxs_l
 }
 
 impl ConnectBuilder {
+    pub fn new(ctx: StdSharedPtr, 
+        pvname: StdString32, 
+        server: StdString32, 
+        on_conn: StdFunction64, 
+        on_dis: StdFunction64,
+        sync_cancel: bool,) -> Self {
+        Self {
+            ctx,
+            _pvname: pvname,
+            _server: server,
+            _on_conn: on_conn,
+            _on_dis: on_dis,
+            _sync_cancel: sync_cancel,
+        }
+    }
     #[inline]
     pub unsafe fn exec(&mut self, pvxs_library: Arc<LoadLib>) -> StdFunction64 {
         pvxs_client_connect_builder_exec(self, pvxs_library)

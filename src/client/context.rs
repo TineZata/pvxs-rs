@@ -12,7 +12,7 @@ use super::config::Config;
 /// Context ctxt(Config::from_env().build())
 /// ```
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Context {
     pub pvt: StdSharedPtr,
 }
