@@ -4,7 +4,7 @@ pub type StdAtomicCounterT = ::std::os::raw::c_ulong;
 /// If Bindgen could only determine the size and alignment of a
 /// type, it is represented like this.
 #[derive(PartialEq, Copy, Clone, Debug, Hash)]
-#[repr(C)]
+#[repr(C, align(8))]
 pub struct _OpaqueArray<T: Copy, const N: usize>(pub [T; N]);
 impl<T: Copy + Default, const N: usize> Default for _OpaqueArray<T, N> {
     fn default() -> Self {
@@ -427,12 +427,11 @@ impl StdFunction64 {
         }
     }
 }
-
 pub type StdFunction = _OpaqueArray<u64, 8usize>;
 
 impl StdFunction {
     pub fn new() -> Self {
-        Self([0; 8usize])
+        Self([0u64; 8usize])
     }
 }
 

@@ -109,7 +109,7 @@ pub fn client_is_pv_connected(name: String) -> bool {
         StdFunction::new(), 
         false);
 
-    let conn_ptr: StdFunction = unsafe { connect.exec(Arc::clone(&pvxs_library)) };
+    let conn_ptr: u8 = unsafe { connect.exec(Arc::clone(&pvxs_library)) };
     false
 }
 

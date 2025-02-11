@@ -37,8 +37,8 @@ const _: () = {
 };
 
 pub unsafe fn pvxs_client_connect_builder_exec(this: *mut ConnectBuilder, pvxs_library: Arc<LoadLib>)
-    -> StdFunction {
-    let func: Symbol<unsafe extern "C" fn(*mut ConnectBuilder) -> StdFunction> = 
+    -> u8 {
+    let func: Symbol<unsafe extern "C" fn(*mut ConnectBuilder) -> u8> = 
         pvxs_library.lib
         .get(if cfg!(target_os = "windows") {
             b"?exec@ConnectBuilder@client@pvxs@@QEAA?AV?$shared_ptr@UConnect@client@pvxs@@@std@@XZ"
@@ -69,7 +69,7 @@ impl ConnectBuilder {
         }
     }
     #[inline]
-    pub unsafe fn exec(&mut self, pvxs_library: Arc<LoadLib>) -> StdFunction {
+    pub unsafe fn exec(&mut self, pvxs_library: Arc<LoadLib>) -> u8 {
         pvxs_client_connect_builder_exec(self, pvxs_library)
     }
 }
