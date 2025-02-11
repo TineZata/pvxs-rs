@@ -1,6 +1,55 @@
 use std::marker::{PhantomData, PhantomPinned};
 pub type StdAtomicCounterT = ::std::os::raw::c_ulong;
 
+/// If Bindgen could only determine the size and alignment of a
+/// type, it is represented like this.
+#[derive(PartialEq, Copy, Clone, Debug, Hash)]
+#[repr(C)]
+pub struct _OpaqueArray<T: Copy, const N: usize>(pub [T; N]);
+impl<T: Copy + Default, const N: usize> Default for _OpaqueArray<T, N> {
+    fn default() -> Self {
+        Self([<T as Default>::default(); N])
+    }
+}
+
+impl<const N: usize> _OpaqueArray<u64, N> {
+    /// Extracts all valid strings from the array.
+    pub fn extract_strings(&self) -> Vec<String> {
+        self.0
+            .iter()
+            .filter_map(|&ptr| {
+                let ptr = ptr as *const std::ffi::c_char;
+                if ptr.is_null() {
+                    return None;
+                }
+
+                unsafe {
+                    std::ffi::CStr::from_ptr(ptr)
+                        .to_str()
+                        .ok()
+                        .map(|s| s.to_owned()) // Convert &str to String
+                }
+            })
+            .collect()
+    }
+
+    /// Creates an `_OpaqueArray` from a list of Rust strings.
+    /// Returns the array and a vector of `CString` to keep the strings in memory.
+    pub fn from_rust_strings(strings: &[&str]) -> Self {
+        let c_strings: Vec<std::ffi::CString> = strings
+            .iter()
+            .map(|&s| std::ffi::CString::new(s).expect("CString conversion failed"))
+            .collect();
+
+        let mut ptrs = [0u64; N];
+        for (i, cstr) in c_strings.iter().enumerate().take(N) {
+            ptrs[i] = cstr.as_ptr() as u64;
+        }
+
+        Self(ptrs)
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct StdRemoveExtent {
@@ -113,10 +162,10 @@ impl StdBasicString {
     }
 }
 
-pub type StdString = StdBasicString;
-pub type StdWstring = StdBasicString;
-pub type StdU16string = StdBasicString;
-pub type StdU32string = StdBasicString;
+pub type StdString = _OpaqueArray<u64, 4usize>;
+pub type StdWstring = _OpaqueArray<u64, 4usize>;
+pub type StdU16string = _OpaqueArray<u64, 4usize>;
+pub type StdU32string = _OpaqueArray<u64, 4usize>;
 
 #[repr(C)]
 pub struct StdStringVal {
@@ -376,6 +425,14 @@ impl StdFunction64 {
         Self {
             _address: [0; 64usize],
         }
+    }
+}
+
+pub type StdFunction = _OpaqueArray<u64, 8usize>;
+
+impl StdFunction {
+    pub fn new() -> Self {
+        Self([0; 8usize])
     }
 }
 

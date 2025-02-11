@@ -4,16 +4,16 @@ use libloading::Symbol;
 
 use crate::bin::LoadLib;
 
-use crate::std_types::{StdFunction64, StdSharedPtr, StdString32};
+use crate::std_types::{StdFunction, StdSharedPtr, StdString};
 #[doc = "! cf. Context::connect()\n! @since 0.2.0"]
 #[repr(C)]
 #[derive(Debug)]
 pub struct ConnectBuilder {
     pub ctx: StdSharedPtr,
-    pub _pvname: StdString32,
-    pub _server: StdString32,
-    pub _on_conn: StdFunction64,
-    pub _on_dis: StdFunction64,
+    pub _pvname: StdString,
+    pub _server: StdString,
+    pub _on_conn: StdFunction,
+    pub _on_dis: StdFunction,
     pub _sync_cancel: bool,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
@@ -37,8 +37,8 @@ const _: () = {
 };
 
 pub unsafe fn pvxs_client_connect_builder_exec(this: *mut ConnectBuilder, pvxs_library: Arc<LoadLib>)
-    -> StdFunction64 {
-    let func: Symbol<unsafe extern "C" fn(*mut ConnectBuilder) -> StdFunction64> = 
+    -> StdFunction {
+    let func: Symbol<unsafe extern "C" fn(*mut ConnectBuilder) -> StdFunction> = 
         pvxs_library.lib
         .get(if cfg!(target_os = "windows") {
             b"?exec@ConnectBuilder@client@pvxs@@QEAA?AV?$shared_ptr@UConnect@client@pvxs@@@std@@XZ"
@@ -54,10 +54,10 @@ pub unsafe fn pvxs_client_connect_builder_exec(this: *mut ConnectBuilder, pvxs_l
 
 impl ConnectBuilder {
     pub fn new(ctx: StdSharedPtr, 
-        pvname: StdString32, 
-        server: StdString32, 
-        on_conn: StdFunction64, 
-        on_dis: StdFunction64,
+        pvname: StdString, 
+        server: StdString, 
+        on_conn: StdFunction, 
+        on_dis: StdFunction,
         sync_cancel: bool,) -> Self {
         Self {
             ctx,
@@ -69,7 +69,7 @@ impl ConnectBuilder {
         }
     }
     #[inline]
-    pub unsafe fn exec(&mut self, pvxs_library: Arc<LoadLib>) -> StdFunction64 {
+    pub unsafe fn exec(&mut self, pvxs_library: Arc<LoadLib>) -> StdFunction {
         pvxs_client_connect_builder_exec(self, pvxs_library)
     }
 }

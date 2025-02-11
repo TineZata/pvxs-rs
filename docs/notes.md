@@ -100,3 +100,7 @@ struct "epics:nt/NTScalar:1.0" {
 ```
 
  bindgen .\client.h -o clientBindgen.rs -- -x c++ -std=c++17 -I../../include -I../../../epics-base/include -I../../../epics-base/include/compiler/msvc -I../../../epics-base/include/os/WIN32
+
+  bindgen .\client.cpp -o clientExampleBindgen.rs -- -x c++ -std=c++17 -I../src -I../include -I../../epics-base/include -I../../epics-base/include/compiler/msvc -I../../../epics-base/include/os/WIN32 -I../bundle/libevent/include -I ../bundle/O.windows-x64/include -DPVXS_ENABLE_EXPERT_API -DWIN32_LEAN_AND_MEAN -DNOMINMAX
+
+  bindgen .\client.cpp -o clientExampleBindgen.rs --opaque-type "std::.*" -- -x c++ -std=c++17 -I../src -I../include -I../../epics-base/include -I../../epics-base/include/compiler/msvc -I../../../epics-base/include/os/WIN32 -I../bundle/libevent/include -I ../bundle/O.windows-x64/include -DPVXS_ENABLE_EXPERT_API -DWIN32_LEAN_AND_MEAN -DNOMINMAX

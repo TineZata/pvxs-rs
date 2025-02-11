@@ -1,4 +1,4 @@
-use crate::std_types::{StdMap, StdString};
+use crate::std_types::{StdMap, StdString, _OpaqueArray};
 
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -8,15 +8,15 @@ pub struct Config {
     /// Entries may take the forms:
     /// - ``<ipaddr>[:<port#>]``
     /// - ``<ipmultiaddr>[:<port>][,<ttl>][@<ifaceaddr>]``
-    pub address_list: StdString,
+    pub address_list: _OpaqueArray<u64, 3usize>,
     /// List of local interface addresses on which beacons may be received.
     /// Also constrains autoAddrList to only consider broadcast addresses of listed interfaces.
     /// Empty implies wildcard 0.0.0.0
-    pub interfaces: StdString,
+    pub interfaces: _OpaqueArray<u64, 3usize>,
     /// List of TCP name servers.
     /// Client context will maintain connections, and send search requests, to these servers.
     /// @since 0.2.0
-    pub name_servers: StdString,
+    pub name_servers: _OpaqueArray<u64, 3usize>,
     /// UDP port to bind.  Default is 5076.  May be zero, cf. Server::config() to find allocated port.
     pub udp_port: ::std::os::raw::c_ushort,
     /// Default TCP port for name servers\n! @since 0.2.0
