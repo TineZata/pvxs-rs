@@ -1,19 +1,20 @@
-use pvxs::client::Config;
+fn initialisation_callback() {
+    println!("Init callback");
+}
+
+fn result_callback() {
+    println!("Result callback");
+}
 
 fn main() {
-    let config: Config = pvxs::get_context_config();
+    
+    //let init_callback = StdFunction64::new(initialisation_callback);
+    //let result_callback = StdFunction64::new(result_callback);
 
-    let addr = unsafe { config.address_list.to_rust_string() };
-    println!("Address list: {}", addr);
+    //let mut builder: pvxs::std_types::GetBuilder = pvxs::get_context_info("PV:Integer".to_string());
+    // Assign a callback to on_init
+    //builder.on_init(init_callback);
+    // Assign a callback to on_result
+    //builder.on_result(result_callback);
 
-    let interfaces = unsafe { config.interfaces.to_rust_string() };
-    println!("Interfaces: {}", interfaces);
-
-    let name_servers = unsafe { config.name_servers.to_rust_string() };
-    println!("Name servers: {}", name_servers);
-
-    println!("UDP port: {}", config.udp_port);
-    println!("TCP port: {}", config.tcp_port);
-    println!("TCP timeout: {}", config.tcp_timeout);
-    println!("Auto address list: {}", if config.auto_addr_list { "true" } else { "false" });
 }

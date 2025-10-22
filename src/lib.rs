@@ -8,21 +8,35 @@
 //!
 
 // Re-export modules
-pub mod pvxs_library; // Raw bindings to the PVXS library
+pub mod bin; // Raw bindings to the PVXS library
 pub mod version; // Version information for the wrapper
 pub mod std_types; // Standard types for PVXS
 pub mod client; // Client context for PVXS
 pub mod wrapper; // Wrapper for the PVXS library
+pub mod epics; // EPICS types for PVXS
+pub mod array; // Array types for PVXS
+pub mod value; // Value types for PVXS
+pub mod typecode; // Typecode types for PVXS
+pub mod storetype; // Storetype types for PVXS
 
 
 // Publicly exposed functions or types from submodules
-pub use client::{
-    Context,
-    Config,
-};
+//pub use client::{
+//    Context,
+//    Config,
+//};
+/*pub use std_types::{
+    GetBuilder,
+    StdBasicString,
+};*/
+
 pub use wrapper::{
     get_version_str,
+    get_version_int,
+    get_version_abi_int,
     get_context_from_env,
-    get_context_config,
+    get_client_config,
+    //get_context_info,
+    client_is_pv_connected,
 };
 
