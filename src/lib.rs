@@ -1,42 +1,51 @@
-// Enable Rust features or warnings (optional but helpful)
-//#![warn(missing_docs)]
-//#![warn(rust_2018_idioms)]
-
-//! # PVXS Rust Wrapper
-//! A Rust wrapper for the PVXS library, providing safe and ergonomic bindings for interacting
-//! with the EPICS PVXS library.
+//! # PVXS - High-level Rust bindings for EPICS PVXS (PVAccess)
 //!
+//! This crate provides idiomatic Rust bindings for the EPICS PVXS library,
+//! with separate client and server APIs for cleaner architecture.
+//!
+//! ## Features
+//!
+//! - **Client API**: Connect to EPICS IOCs, get/put/monitor PVs
+//! - **Server API**: Create PVXS servers and provide PVs  
+//! - **Async Support**: Optional tokio-based async operations
+//! - **Type Safety**: Strong typing with comprehensive error handling
+//! - **High Performance**: Zero-copy operations where possible
+//!
+//! ## Quick Start
+//!
+//! ```rust,no_run
+//! use pvxs::client::Client;
+//!
+//! fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let client = Client::new()?;
+//!     let value = client.get("MY:PV:NAME", 5.0)?;
+//!     println!("Value: {}", value);
+//!     Ok(())
+//! }
+//! ```
+//!
+//! ## Module Structure
+//!
+//! - [`client`] - Client API for connecting to EPICS PVs
+//! - [`server`] - Server API for providing EPICS PVs
+//! - [`types`] - Common types and value representations
+//! - [`error`] - Error types and handling
 
-// Re-export modules
-pub mod bin; // Raw bindings to the PVXS library
-pub mod version; // Version information for the wrapper
-pub mod std_types; // Standard types for PVXS
-pub mod client; // Client context for PVXS
-pub mod wrapper; // Wrapper for the PVXS library
-pub mod epics; // EPICS types for PVXS
-pub mod array; // Array types for PVXS
-pub mod value; // Value types for PVXS
-pub mod typecode; // Typecode types for PVXS
-pub mod storetype; // Storetype types for PVXS
+pub mod error;
+pub mod types;
 
+#[cfg(feature = "client")]
+pub mod client;
 
-// Publicly exposed functions or types from submodules
-//pub use client::{
-//    Context,
-//    Config,
-//};
-/*pub use std_types::{
-    GetBuilder,
-    StdBasicString,
-};*/
+#[cfg(feature = "server")]
+pub mod server;
 
-pub use wrapper::{
-    get_version_str,
-    get_version_int,
-    get_version_abi_int,
-    get_context_from_env,
-    get_client_config,
-    //get_context_info,
-    client_is_pv_connected,
-};
+// Re-export commonly used types
+pub use error::{Error, Result};
+pub use types::{Value, Timestamp};
 
+#[cfg(feature = "client")]
+pub use client::Client;
+
+#[cfg(feature = "server")]
+pub use server::Server;

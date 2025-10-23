@@ -1,15 +1,28 @@
-[package]
+﻿[package]
 name = "pvxs"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "PVXS Rust library"
-# license = ""
-# repository = ""
+description = "High-level Rust bindings for EPICS PVXS (PVAccess) with separate Client and Server APIs"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/TineZata/pvxs-rs"
 
 [dependencies]
-# For dynamic loading of shared libraries (e.g., pvxs.dll)
-libloading = "0.8.6"
+epics-pvxs-sys = { git = "https://github.com/TineZata/epics-pvxs-sys", default-features = false }
+thiserror = "1.0"
+serde = { version = "1.0", features = ["derive"], optional = true }
+tokio = { version = "1.0", features = ["full"], optional = true }
+tracing = "0.1"
+futures = { version = "0.3", optional = true }
 
 [dev-dependencies]
-# For testing
-assert_matches = "1.5.0"  # Optional: for ergonomic test assertions
+tokio-test = "0.4"
+env_logger = "0.10"
+fastrand = "2.0"
+
+[features]
+default = ["client"]
+client = []
+server = []
+async = ["tokio", "futures", "epics-pvxs-sys/async"]
+serde = ["dep:serde"]
+full = ["client", "server", "async", "serde"]
