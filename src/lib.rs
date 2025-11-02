@@ -45,7 +45,7 @@ pub use error::{Error, Result};
 pub use types::{Value, Timestamp};
 
 #[cfg(feature = "client")]
-pub use client::Client;
+pub use client::{Client, Monitor, MonitorBuilder};
 
 #[cfg(feature = "server")]
 pub use server::Server;

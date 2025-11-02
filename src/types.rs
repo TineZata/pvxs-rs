@@ -57,6 +57,41 @@ impl Value {
             .map_err(|_| Error::field_access(field))
     }
 
+    /// Get an enum field by name (enum values are i16 indices)
+    pub fn get_enum(&self, field: &str) -> Result<i16> {
+        self.inner
+            .get_field_enum(field)
+            .map_err(|_| Error::field_access(field))
+    }
+
+    /// Get a double array field by name
+    pub fn get_double_array(&self, field: &str) -> Result<Vec<f64>> {
+        self.inner
+            .get_field_double_array(field)
+            .map_err(|_| Error::field_access(field))
+    }
+
+    /// Get an integer array field by name
+    pub fn get_int_array(&self, field: &str) -> Result<Vec<i32>> {
+        self.inner
+            .get_field_int32_array(field)
+            .map_err(|_| Error::field_access(field))
+    }
+
+    /// Get a string array field by name
+    pub fn get_string_array(&self, field: &str) -> Result<Vec<String>> {
+        self.inner
+            .get_field_string_array(field)
+            .map_err(|_| Error::field_access(field))
+    }
+
+    /// Get an enum array field by name (enum values are i16 indices)
+    pub fn get_enum_array(&self, field: &str) -> Result<Vec<i16>> {
+        self.inner
+            .get_field_enum_array(field)
+            .map_err(|_| Error::field_access(field))
+    }
+
     /// Attempt to get the main "value" field as a double
     /// This is a convenience method for scalar PVs
     pub fn as_double(&self) -> Result<f64> {
@@ -73,6 +108,36 @@ impl Value {
     /// This is a convenience method for integer PVs
     pub fn as_int(&self) -> Result<i32> {
         self.get_int("value")
+    }
+
+    /// Attempt to get the main "value" field as an enum index
+    /// This is a convenience method for enum PVs (returns i16 index)
+    pub fn as_enum(&self) -> Result<i16> {
+        self.get_enum("value")
+    }
+
+    /// Attempt to get the main "value" field as a double array
+    /// This is a convenience method for array PVs
+    pub fn as_double_array(&self) -> Result<Vec<f64>> {
+        self.get_double_array("value")
+    }
+
+    /// Attempt to get the main "value" field as an integer array
+    /// This is a convenience method for array PVs
+    pub fn as_int_array(&self) -> Result<Vec<i32>> {
+        self.get_int_array("value")
+    }
+
+    /// Attempt to get the main "value" field as a string array
+    /// This is a convenience method for array PVs
+    pub fn as_string_array(&self) -> Result<Vec<String>> {
+        self.get_string_array("value")
+    }
+
+    /// Attempt to get the main "value" field as an enum array
+    /// This is a convenience method for array PVs (returns i16 indices)
+    pub fn as_enum_array(&self) -> Result<Vec<i16>> {
+        self.get_enum_array("value")
     }
 
     /// Get alarm information if available
