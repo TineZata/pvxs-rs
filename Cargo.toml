@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/TineZata/pvxs-rs"
 
 [dependencies]
-epics-pvxs-sys = { git = "https://github.com/TineZata/epics-pvxs-sys", default-features = false, branch = "development" }
+epics-pvxs-sys = { path = "../epics-pvxs-sys", default-features = false }
 thiserror = "2.0.17"
 serde = { version = "1.0", features = ["derive"], optional = true }
 tokio = { version = "1.0", features = ["full"], optional = true }
