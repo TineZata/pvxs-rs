@@ -4,6 +4,7 @@
 //! servers that can provide Process Variables to clients.
 
 use crate::error::{Error, Result};
+use crate::types::Value;
 use epics_pvxs_sys::{Server as PvxsServer, SharedPV};
 use tracing::{debug, info};
 
@@ -518,6 +519,41 @@ impl Pv {
         Ok(())
     }
 
+    /// Fetch the current value of the PV (server-side read)
+    ///
+    /// This performs a server-side fetch to read the current value stored in the PV.
+    /// This is useful for verifying what value is currently being served to clients.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Value` containing the current PV data including the value field
+    /// and any metadata (timestamp, alarm information, etc.).
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use pvxs::Server;
+    /// # let mut server = Server::new().unwrap();
+    /// let mut pv = server.add_double_pv("test:voltage", 3.3)?;
+    /// pv.post_double(5.0)?;
+    /// 
+    /// // Fetch and verify the value
+    /// let value = pv.fetch()?;
+    /// assert_eq!(value.as_double()?, 5.0);
+    /// # Ok::<(), pvxs::Error>(())
+    /// ```
+    pub fn fetch(&mut self) -> Result<Value> {
+        debug!("Fetching value from PV: {}", self.name);
+        
+        let pvxs_value = self.inner
+            .fetch()
+            .map_err(|e| Error::ServerConfig {
+                message: format!("Failed to fetch value from '{}': {}", self.name, e),
+            })?;
+        
+        Ok(Value::from_pvxs(pvxs_value))
+    }
+
     /// Get the name of this PV
     pub fn name(&self) -> &str {
         &self.name
@@ -553,13 +589,26 @@ mod tests {
         // Update value
         double_pv.post_double(84.0).unwrap();
         
+        // Fetch and verify
+        let fetched = double_pv.fetch().unwrap();
+        let value = fetched.as_double().unwrap();
+        assert!((value - 84.0).abs() < 1e-6);
+        
         // Add int32 PV
         let mut int_pv = server.add_int32_pv("test:int", 123).unwrap();
         int_pv.post_int32(456).unwrap();
         
+        // Fetch and verify int
+        let fetched_int = int_pv.fetch().unwrap();
+        assert_eq!(fetched_int.as_int().unwrap(), 456);
+        
         // Add string PV
         let mut string_pv = server.add_string_pv("test:string", "hello").unwrap();
         string_pv.post_string("world").unwrap();
+        
+        // Fetch and verify string
+        let fetched_string = string_pv.fetch().unwrap();
+        assert_eq!(fetched_string.as_string().unwrap(), "world");
     }
 
     #[test]
