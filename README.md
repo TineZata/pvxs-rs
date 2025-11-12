@@ -6,117 +6,20 @@ Built on top of [`epics-pvxs-sys`](https://github.com/TineZata/epics-pvxs-sys), 
 
 ## Features
 
-- 🔌 **Client API**: Connect to EPICS IOCs, get/put/monitor Process Variables
-- 🖥️ **Server API**: Create PVXS servers and provide PVs to the network
-- ⚡ **Async Support**: Optional tokio-based async operations
-- 🛡️ **Type Safety**: Strong typing with comprehensive error handling
-- 🚀 **High Performance**: Zero-copy operations where possible
-- 📊 **Rich Value Types**: Support for scalars, arrays, structures with timestamps and alarms
-- 🔧 **Builder Patterns**: Fluent APIs for configuration
+- **Client API**: Connect to EPICS IOCs, get/put/monitor Process Variables
+- **Server API**: Create PVXS servers and provide PVs to the network
+- **Async Support**: Optional tokio-based async operations
+- **Type Safety**: Strong typing with comprehensive error handling
+- **High Performance**: Zero-copy operations where possible
+- **Rich Value Types**: Support for scalars, arrays, structures with timestamps and alarms
+- **Builder Patterns**: Fluent APIs for configuration
 
-## Quick Start
-
-### Client Usage
-
-```rust
-use pvxs::Client;
-
-fn main() -> Result<(), pvxs::Error> {
-    // Create a client using EPICS environment variables
-    let client = Client::new()?;
-    
-    // Get a PV value
-    let value = client.get("MY:PV:NAME", 5.0)?;
-    println!("Value: {}", value.as_double()?);
-    println!("Alarm: {}", value.alarm_info());
-    
-    // Put a new value (generic - supports f64, i32, &str, String)
-    client.put("MY:PV:NAME", 42.5, 5.0)?;
-    
-    // Legacy method also available
-    client.put_double("MY:PV:NAME", 42.5, 5.0)?;
-    
-    Ok(())
-}
-```
-
-### Server Usage
-
-```rust
-use pvxs::{Server, server::PvValue};
-
-fn main() -> Result<(), pvxs::Error> {
-    // Create a server
-    let server = Server::new()?;
-    
-    // Add some PVs
-    server.add_pv("DEMO:COUNTER", PvValue::Int32(0))?;
-    server.add_pv("DEMO:TEMPERATURE", PvValue::Double(20.0))?;
-    server.add_pv("DEMO:STATUS", PvValue::String("Running".to_string()))?;
-    
-    // Start the server
-    server.start()?;
-    println!("Server running with {} PVs", server.list_pvs().len());
-    
-    // Update values
-    server.update_pv("DEMO:COUNTER", PvValue::Int32(1))?;
-    
-    Ok(())
-}
-```
-
-### Async Client Usage
-
-```rust
-use pvxs::Client;
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = Client::new()?;
-    
-    // Concurrent operations on multiple PVs
-    let pv_names = ["PV1", "PV2", "PV3"];
-    let futures = pv_names.iter().map(|name| async {
-        tokio::task::spawn_blocking({
-            let name = name.to_string();
-            move || client.get(&name, 3.0)
-        }).await
-    });
-    
-    let results = futures::future::join_all(futures).await;
-    
-    for (name, result) in pv_names.iter().zip(results) {
-        match result? {
-            Ok(value) => println!("{}: {}", name, value),
-            Err(e) => println!("{}: Error - {}", name, e),
-        }
-    }
-    
-    Ok(())
-}
-```
-
-## Installation
-
-Add this to your `Cargo.toml`:
-
-```toml
-[dependencies]
-# Use the latest development version (synchronous operations by default)
-pvxs = { git = "https://github.com/TineZata/pvxs-rs", branch = "main" }
-
-# For async support (⚠️ experimental - see limitations below)
-pvxs = { git = "https://github.com/TineZata/pvxs-rs", branch = "main", features = ["async"] }
-
-# For all features
-pvxs = { git = "https://github.com/TineZata/pvxs-rs", branch = "main", features = ["full"] }
-```
 
 ### Prerequisites
 
-Before using this crate, you need:
+Before using this crate, you need the following dependencies installed:
 
-1. **EPICS Base** (≥3.15.1) - [Download](https://epics-controls.org/resources-and-support/base/)
+1. **EPICS Base** (≥7.0.9) - [Download](https://epics-controls.org/resources-and-support/base/)
 2. **PVXS Library** (≥1.0.0) - [Download](https://github.com/epics-base/pvxs) 
 3. **epics-pvxs-sys** - The low-level bindings (automatically included)
 

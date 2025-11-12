@@ -1,7 +1,4 @@
-//! Client API for connecting to EPICS PVs
-//!  
-//! This module provides a high-level client interface for connecting to EPICS
-//! IOCs and performing get, put, and monitor operations on Process Variables.
+//! Client API for get/put/monitor operations with EPICS PVXS
 
 use crate::error::{Error, Result};
 use crate::types::Value;

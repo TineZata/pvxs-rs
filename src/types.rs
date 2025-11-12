@@ -110,6 +110,13 @@ impl Value {
         self.get_int("value")
     }
 
+    /// Attempt to get the main "value" field as a long
+    /// This is a convenience method for long integer PVs
+    /// Currently uses int32 for long values
+    pub fn as_long(&self) -> Result<i64> {
+        self.get_long("value")
+    }
+
     /// Attempt to get the main "value" field as an enum index
     /// This is a convenience method for enum PVs (returns i16 index)
     pub fn as_enum(&self) -> Result<i16> {
@@ -225,6 +232,16 @@ impl Timestamp {
     /// Convert to seconds as a floating-point number
     pub fn as_f64(&self) -> f64 {
         self.seconds_past_epoch as f64 + (self.nanoseconds as f64 / 1_000_000_000.0)
+    }
+
+    /// Convert to human-readable string
+    pub fn to_string(&self) -> String {
+        // Convert EPICS epoch to UNIX epoch for display
+        const EPICS_EPOCH_OFFSET: i64 = 631152000;
+        let unix_seconds = self.seconds_past_epoch + EPICS_EPOCH_OFFSET;
+        let datatime = chrono::DateTime::<chrono::Utc>::from_timestamp(unix_seconds, self.nanoseconds).unwrap_or_default();
+        let time_stamp_str = datatime.format("%Y-%m-%d %H:%M:%S").to_string();
+        format!("{}.{}", time_stamp_str, self.nanoseconds)
     }
 }
 
