@@ -3,7 +3,7 @@ name = "pvxs"
 version = "0.2.0"
 edition = "2021"
 description = "High-level Rust bindings for EPICS PVXS (PVAccess) with separate Client and Server APIs"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 repository = "https://github.com/TineZata/pvxs-rs"
 
 [dependencies]
@@ -20,7 +20,7 @@ env_logger = "0.11.8"
 fastrand = "2.3.0"
 
 [features]
-default = ["client"]
+default = ["client", "server"]
 client = []
 server = []
 async = ["tokio", "futures", "epics-pvxs-sys/async"]
