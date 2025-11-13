@@ -189,6 +189,45 @@ impl Server {
         })
     }
 
+    /// Create and add a new enum PV to the server
+    /// 
+    /// # Arguments
+    /// * `pv_name` - Name of the Process Variable
+    /// * `choices` - List of enum choices
+    /// * `selected_value` - Initial value for the PV
+    /// # Returns
+    ///
+    /// Returns a `Pv` handle that can be used to update the PV value.
+    /// # Example
+    /// ```rust,no_run
+    /// use pvxs::Server;
+    /// 
+    /// let mut server = Server::new()?;
+    /// let mut pv = server.add_enum_pv("test:mode", "AUTO", "MANUAL", "TECTONIC", 0)?;
+    /// # Ok::<(), pvxs::Error>(())
+    /// ```
+    pub fn add_enum_pv(&mut self, pv_name: &str, choices: Vec<&str>, selected_value: i16) -> Result<Pv> {
+        debug!("Adding enum PV: {} with value: {}", pv_name, selected_value);
+        
+        let mut shared_pv = self.inner
+            .create_pv_enum("internal", choices, selected_value)
+            .map_err(|e| Error::ServerConfig {
+                message: format!("Failed to create enum PV: {}", e),
+            })?;
+        
+        self.inner
+            .add_pv(pv_name, &mut shared_pv)
+            .map_err(|e| Error::ServerConfig {
+                message: format!("Failed to add PV '{}': {}", pv_name, e),
+            })?;
+        
+        info!("Added enum PV: {}", pv_name);
+        Ok(Pv {
+            inner: shared_pv,
+            name: pv_name.to_string(),
+        })
+    }
+
     /// Create and add a new read-only double PV to the server
     ///
     /// # Arguments

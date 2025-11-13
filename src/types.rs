@@ -85,11 +85,28 @@ impl Value {
             .map_err(|_| Error::field_access(field))
     }
 
-    /// Get an enum array field by name (enum values are i16 indices)
-    pub fn get_enum_array(&self, field: &str) -> Result<Vec<i16>> {
-        self.inner
-            .get_field_enum_array(field)
-            .map_err(|_| Error::field_access(field))
+    /// Get enum choices for a field
+    ///
+    /// For NTEnum types, this retrieves the string choices array.
+    /// Typically used with paths like "value.choices" for the main enum field.
+    ///
+    /// # Arguments
+    ///
+    /// * `field` - The field path to the choices array (e.g., "value.choices")
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use pvxs::Client;
+    /// # let mut client = Client::new().unwrap();
+    /// let value = client.get("MY:ENUM:PV", 5.0)?;
+    /// let choices = value.get_enum_choices("value.choices")?;
+    /// let index = value.get_enum("value.index")?;
+    /// println!("Current choice: '{}'", choices[index as usize]);
+    /// # Ok::<(), pvxs::Error>(())
+    /// ```
+    pub fn get_enum_choices(&self, field: &str) -> Result<Vec<String>> {
+        self.get_string_array(field)
     }
 
     /// Attempt to get the main "value" field as a double
@@ -117,10 +134,16 @@ impl Value {
         self.get_long("value")
     }
 
-    /// Attempt to get the main "value" field as an enum index
+    /// Attempt to get the main "value.index" field as an enum index
     /// This is a convenience method for enum PVs (returns i16 index)
-    pub fn as_enum(&self) -> Result<i16> {
-        self.get_enum("value")
+    pub fn as_enum_index(&self) -> Result<i16> {
+        self.get_enum("value.index")
+    }
+
+    /// Attempt to get the main "value.choices" field as a string array
+    /// This is a convenience method for enum PVs
+    pub fn as_enum_choices(&self) -> Result<Vec<String>> {
+        self.get_string_array("value.choices")
     }
 
     /// Attempt to get the main "value" field as a double array
@@ -139,12 +162,6 @@ impl Value {
     /// This is a convenience method for array PVs
     pub fn as_string_array(&self) -> Result<Vec<String>> {
         self.get_string_array("value")
-    }
-
-    /// Attempt to get the main "value" field as an enum array
-    /// This is a convenience method for array PVs (returns i16 indices)
-    pub fn as_enum_array(&self) -> Result<Vec<i16>> {
-        self.get_enum_array("value")
     }
 
     /// Get alarm information if available
