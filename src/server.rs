@@ -358,7 +358,7 @@ impl Server {
     ///
     /// Returns 
     ///  - non-zero for isolated servers.
-    ///  - 5075 for remote servers configured via EPICS v7 environment.
+    ///  - For remoted servers, tries to bind to 5075 (EPICS v7) first but may fall back to a random port if that is in use.
     pub fn tcp_port(&self) -> u16 {
         self.inner.tcp_port()
     }
@@ -367,7 +367,7 @@ impl Server {
     ///
     /// Returns 
     ///  - non-zero for isolated servers.
-    ///  - 5076 for remote servers configured via EPICS v7 environment.
+    ///  - For remote servers, tries to bind to 5076 (EPICS v7) first but may fall back to a random port if that is in use.
     pub fn udp_port(&self) -> u16 {
         self.inner.udp_port()
     }
