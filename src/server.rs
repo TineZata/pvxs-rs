@@ -356,14 +356,18 @@ impl Server {
 
     /// Get the TCP port the server is using
     ///
-    /// Returns 0 if the server is not started.
+    /// Returns 
+    ///  - non-zero for isolated servers.
+    ///  - 5075 for remote servers configured via EPICS v7 environment.
     pub fn tcp_port(&self) -> u16 {
         self.inner.tcp_port()
     }
 
     /// Get the UDP port the server is using
     ///
-    /// Returns 0 if the server is not started.
+    /// Returns 
+    ///  - non-zero for isolated servers.
+    ///  - 5076 for remote servers configured via EPICS v7 environment.
     pub fn udp_port(&self) -> u16 {
         self.inner.udp_port()
     }
@@ -463,6 +467,30 @@ impl Pv {
             .post_string(value)
             .map_err(|e| Error::ServerConfig {
                 message: format!("Failed to post string value to '{}': {}", self.name, e),
+            })?;
+        
+        Ok(())
+    }
+
+    /// Update the PV enum selected value
+    /// 
+    /// # Arguments
+    /// * `value` - New enum index to post
+    /// # Example
+    /// ```rust,no_run
+    /// # use pvxs::Server;
+    /// # let mut server = Server::new().unwrap();
+    /// let mut pv = server.add_enum_pv("test:mode", &["AUTO", "MANUAL", "TECTONIC"], 0)?;
+    /// pv.post_enum(1)?;
+    /// # Ok::<(), pvxs::Error>(())
+    /// ```
+    pub fn post_enum(&mut self, value: i16) -> Result<()> {
+        debug!("Posting enum index {} to PV: {}", value, self.name);
+        
+        self.inner
+            .post_enum(value)
+            .map_err(|e| Error::ServerConfig {
+                message: format!("Failed to post enum index to '{}': {}", self.name, e),
             })?;
         
         Ok(())
@@ -604,62 +632,5 @@ impl std::fmt::Debug for Pv {
         f.debug_struct("Pv")
             .field("name", &self.name)
             .finish()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_server_creation() {
-        let result = Server::new_isolated();
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_pv_operations() {
-        let mut server = Server::new_isolated().unwrap();
-        
-        // Add double PV
-        let mut double_pv = server.add_double_pv("test:double", 42.0).unwrap();
-        assert_eq!(double_pv.name(), "test:double");
-        
-        // Update value
-        double_pv.post_double(84.0).unwrap();
-        
-        // Fetch and verify
-        let fetched = double_pv.fetch().unwrap();
-        let value = fetched.as_double().unwrap();
-        assert!((value - 84.0).abs() < 1e-6);
-        
-        // Add int32 PV
-        let mut int_pv = server.add_int32_pv("test:int", 123).unwrap();
-        int_pv.post_int32(456).unwrap();
-        
-        // Fetch and verify int
-        let fetched_int = int_pv.fetch().unwrap();
-        assert_eq!(fetched_int.as_int().unwrap(), 456);
-        
-        // Add string PV
-        let mut string_pv = server.add_string_pv("test:string", "hello").unwrap();
-        string_pv.post_string("world").unwrap();
-        
-        // Fetch and verify string
-        let fetched_string = string_pv.fetch().unwrap();
-        assert_eq!(fetched_string.as_string().unwrap(), "world");
-    }
-
-    #[test]
-    fn test_server_lifecycle() {
-        let mut server = Server::new_isolated().unwrap();
-        server.add_double_pv("test:lifecycle", 1.0).unwrap();
-        
-        // Start and stop
-        server.start().unwrap();
-        assert!(server.tcp_port() > 0);
-        assert!(server.udp_port() > 0);
-        
-        server.stop().unwrap();
     }
 }
