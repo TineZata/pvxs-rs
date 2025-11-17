@@ -4,7 +4,7 @@
 //! servers that can provide Process Variables to clients.
 
 use crate::error::{Error, Result};
-use crate::types::Value;
+use crate::types::{Value, AlarmSeverity, AlarmStatus};
 use epics_pvxs_sys::{Server as PvxsServer, SharedPV};
 use tracing::{debug, info};
 
@@ -502,7 +502,7 @@ impl Pv {
     ///
     /// * `value` - New value to post
     /// * `severity` - Alarm severity (0=NO_ALARM, 1=MINOR, 2=MAJOR, 3=INVALID)
-    /// * `status` - Alarm status code
+    /// * `status` - Alarm status code (0=NO_ALARM, 1=DEVICE, 2=DRIVER, 3=RECORD, 4=DATABASE, 5=CONFIG, 6=UNDEFINED, 7=CLIENT)
     /// * `message` - Alarm message
     ///
     /// # Example
@@ -514,11 +514,11 @@ impl Pv {
     /// pv.post_double_with_alarm(100.0, 2, 0, "High temperature")?;
     /// # Ok::<(), pvxs::Error>(())
     /// ```
-    pub fn post_double_with_alarm(&mut self, value: f64, severity: i32, status: i32, message: &str) -> Result<()> {
+    pub fn post_double_with_alarm(&mut self, value: f64, severity: AlarmSeverity, status: AlarmStatus, message: &str) -> Result<()> {
         debug!("Posting double value {} with alarm to PV: {}", value, self.name);
         
         self.inner
-            .post_double_with_alarm(value, severity, status, message)
+            .post_double_with_alarm(value, severity.as_int(), status.as_int(), message)
             .map_err(|e| Error::ServerConfig {
                 message: format!("Failed to post double value with alarm to '{}': {}", self.name, e),
             })?;
@@ -544,11 +544,11 @@ impl Pv {
     /// pv.post_int32_with_alarm(10, 1, 0, "Error count elevated")?;
     /// # Ok::<(), pvxs::Error>(())
     /// ```
-    pub fn post_int32_with_alarm(&mut self, value: i32, severity: i32, status: i32, message: &str) -> Result<()> {
+    pub fn post_int32_with_alarm(&mut self, value: i32, severity: AlarmSeverity, status: AlarmStatus, message: &str) -> Result<()> {
         debug!("Posting int32 value {} with alarm to PV: {}", value, self.name);
         
         self.inner
-            .post_int32_with_alarm(value, severity, status, message)
+            .post_int32_with_alarm(value, severity.as_int(), status.as_int(), message)
             .map_err(|e| Error::ServerConfig {
                 message: format!("Failed to post int32 value with alarm to '{}': {}", self.name, e),
             })?;
@@ -574,13 +574,42 @@ impl Pv {
     /// pv.post_string_with_alarm("ERROR", 2, 0, "System failure")?;
     /// # Ok::<(), pvxs::Error>(())
     /// ```
-    pub fn post_string_with_alarm(&mut self, value: &str, severity: i32, status: i32, message: &str) -> Result<()> {
+    pub fn post_string_with_alarm(&mut self, value: &str, severity: AlarmSeverity, status: AlarmStatus, message: &str) -> Result<()> {
         debug!("Posting string value '{}' with alarm to PV: {}", value, self.name);
         
         self.inner
-            .post_string_with_alarm(value, severity, status, message)
+            .post_string_with_alarm(value, severity.as_int(), status.as_int(), message)
             .map_err(|e| Error::ServerConfig {
                 message: format!("Failed to post string value with alarm to '{}': {}", self.name, e),
+            })?;
+        
+        Ok(())
+    }
+
+    /// Update the PV enum selected value with alarm information
+    /// 
+    /// # Arguments
+    /// * `value` - New enum index to post
+    /// * `severity` - Alarm severity (0=NO_ALARM, 1=
+    /// MINOR, 2=MAJOR, 3=INVALID)
+    /// * `status` - Alarm status code
+    /// * `message` - Alarm message
+    /// # Example
+    /// ```rust,no_run
+    /// # use pvxs::Server;
+    /// # let mut server = Server::new().unwrap();
+    /// let mut pv = server.add_enum_pv("test:mode", &["AUTO", "MANUAL", "TECTONIC"], 0)?;
+    /// pv.post_enum_with_alarm(1, AlarmSeverity::Minor, AlarmStatus::Device, "Mode changed")?;
+    /// # Ok::<(), pvxs::Error>(())
+    /// ```
+    /// 
+    pub fn post_enum_with_alarm(&mut self, value: i16, severity: AlarmSeverity, status: AlarmStatus, message: &str) -> Result<()> {
+        debug!("Posting enum index {} with alarm to PV: {}", value, self.name);
+        
+        self.inner
+            .post_enum_with_alarm(value, severity.as_int(), status.as_int(), message)
+            .map_err(|e| Error::ServerConfig {
+                message: format!("Failed to post enum index with alarm to '{}': {}", self.name, e),
             })?;
         
         Ok(())

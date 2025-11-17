@@ -172,7 +172,7 @@ impl Value {
         
         AlarmInfo {
             severity: AlarmSeverity::from_int(severity),
-            status,
+            status: AlarmStatus::from_int(status),
             message,
         }
     }
@@ -309,13 +309,68 @@ impl fmt::Display for AlarmSeverity {
     }
 }
 
+// Alarms status codes
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlarmStatus {
+    None = 0,
+    Device = 1,
+    Driver = 2,
+    Record = 3,
+    Database = 4,
+    Config = 5,
+    Undefined = 6,
+    Client = 7,
+}
+
+impl AlarmStatus {
+    /// Convert from integer value
+    pub fn from_int(value: i32) -> Self {
+        match value {
+            0 => AlarmStatus::None,
+            1 => AlarmStatus::Device,
+            2 => AlarmStatus::Driver,
+            3 => AlarmStatus::Record,
+            4 => AlarmStatus::Database,
+            5 => AlarmStatus::Config,
+            6 => AlarmStatus::Undefined,
+            7 => AlarmStatus::Client,
+            _ => AlarmStatus::Undefined,
+        }
+    }
+
+    /// Convert to integer value
+    pub fn as_int(self) -> i32 {
+        self as i32
+    }
+
+    /// Check if this represents an alarm condition
+    pub fn is_alarm(self) -> bool {
+        !matches!(self, AlarmStatus::None)
+    }
+}
+
+impl fmt::Display for AlarmStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AlarmStatus::None => write!(f, "NONE"),
+            AlarmStatus::Device => write!(f, "DEVICE"),
+            AlarmStatus::Driver => write!(f, "DRIVER"),
+            AlarmStatus::Record => write!(f, "RECORD"),
+            AlarmStatus::Database => write!(f, "DATABASE"),
+            AlarmStatus::Config => write!(f, "CONFIGURATION"),
+            AlarmStatus::Undefined => write!(f, "UNDEFINED"),
+            AlarmStatus::Client => write!(f, "CLIENT"),
+        }
+    }
+}
+
 /// Alarm information for a PV value
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlarmInfo {
     /// Alarm severity
     pub severity: AlarmSeverity,
     /// Alarm status code
-    pub status: i32,
+    pub status: AlarmStatus,
     /// Alarm message
     pub message: String,
 }
