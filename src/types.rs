@@ -458,3 +458,10 @@ impl fmt::Display for AccessRights {
         }
     }
 }
+
+pub use epics_pvxs_sys::NTScalarAlarm;
+pub use epics_pvxs_sys::NTScalarTime;
+pub use epics_pvxs_sys::NTScalarMetadata;
+pub use epics_pvxs_sys::NTScalarControl;
+pub use epics_pvxs_sys::NTScalarDisplay;
+pub use epics_pvxs_sys::NTScalarValueAlarm;  

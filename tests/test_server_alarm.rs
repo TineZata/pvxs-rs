@@ -1,4 +1,4 @@
-mod test_server_alarm_serverity {
+mod test_server_alarm {
 
     #[test]
     fn test_double_with_alarm_isolated() {

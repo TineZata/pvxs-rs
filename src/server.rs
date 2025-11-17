@@ -105,6 +105,60 @@ impl Server {
         })
     }
 
+    /// Create and add a new double PV with metadata to the server
+    /// 
+    /// # Arguments
+    /// * `pv_name` - Name of the Process Variable
+    /// * `initial_value` - Initial value for the PV
+    /// * `metadata` - Metadata for the scalar PV
+    /// # Returns
+    /// 
+    /// Returns a `Pv` handle that can be used to update the PV value.
+    /// # Example
+    /// ```rust,no_run
+    /// use pvxs::Server;
+    /// use pvxs::types::{NTScalarMetadata, NTScalarAlarm, NTScalarTime
+    ///    };
+    /// 
+    /// let metadata = NTScalarMetadata {
+    ///    alarm: NTScalarAlarm {
+    ///       has_alarm: true,
+    ///      has_severity: true,
+    ///     has_status: true,
+    ///   },
+    ///   time_stamp: NTScalarTime {
+    ///     has_time: true,
+    ///     has_user_tag: false,
+    ///  },
+    /// };
+    /// let mut server = Server::new()?;
+    /// let mut pv = server.add_double_pv_with_metadata("test:temperature",
+    ///   25.0, metadata)?;
+    /// # Ok::<(), pvxs::Error>(())
+    /// ```
+    /// 
+    pub fn add_double_pv_with_metadata(&mut self, pv_name: &str, initial_value: f64, metadata: NTScalarMetadata) -> Result<Pv> {
+        debug!("Adding double PV with metadata: {} with value: {}", pv_name, initial_value);
+        
+        let mut shared_pv = self.inner
+            .create_pv_double_with_metadata("internal", initial_value, metadata)
+            .map_err(|e| Error::ServerConfig {
+                message: format!("Failed to create double PV with metadata: {}", e),
+            })?;
+        
+        self.inner
+            .add_pv(pv_name, &mut shared_pv)
+            .map_err(|e| Error::ServerConfig {
+                message: format!("Failed to add PV '{}': {}", pv_name, e),
+            })?;
+        
+        info!("Added double PV with metadata: {}", pv_name);
+        Ok(Pv {
+            inner: shared_pv,
+            name: pv_name.to_string(),
+        })
+    }
+
     /// Create and add a new int32 PV to the server
     ///
     /// # Arguments
