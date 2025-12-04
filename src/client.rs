@@ -5,35 +5,6 @@ use crate::types::Value;
 use epics_pvxs_sys::{Context, Monitor as PvxsMonitor, MonitorBuilder as PvxsMonitorBuilder, PvxsError};
 use tracing::{debug, info};
 
-/// Trait for types that can be put to a PV
-pub trait PutValue {
-    fn put(self, client: &mut Client, pv_name: &str, timeout: f64) -> Result<()>;
-}
-
-impl PutValue for f64 {
-    fn put(self, client: &mut Client, pv_name: &str, timeout: f64) -> Result<()> {
-        client.put_double(pv_name, self, timeout)
-    }
-}
-
-impl PutValue for i32 {
-    fn put(self, client: &mut Client, pv_name: &str, timeout: f64) -> Result<()> {
-        client.put_int32(pv_name, self, timeout)
-    }
-}
-
-impl PutValue for &str {
-    fn put(self, _client: &mut Client, _pv_name: &str, _timeout: f64) -> Result<()> {
-        Err(Error::TypeConversion { message: "put_string not yet implemented in epics-pvxs-sys - only put_double and put_int32 are available".to_string() })
-    }
-}
-
-impl PutValue for String {
-    fn put(self, client: &mut Client, pv_name: &str, timeout: f64) -> Result<()> {
-        self.as_str().put(client, pv_name, timeout)
-    }
-}
-
 /// High-level PVXS client for EPICS operations
 pub struct Client {
     context: Context,
@@ -83,7 +54,7 @@ impl Client {
     /// use pvxs::Client;
     ///
     /// let mut client = Client::new()?;
-    /// let value = client.get("MY:PV:NAME", 5.0)?;
+    /// let value = client.get("MY:PV:DOUBLE", 5.0)?;
     /// 
     /// println!("Value: {}", value.as_double()?);
     /// println!("Alarm: {}", value.alarm_info());
@@ -149,6 +120,19 @@ impl Client {
             .put_int32(pv_name, value, timeout)
             .map_err(|e| self.convert_pvxs_error(e, pv_name))?;
         debug!("Successfully put int32 value to PV: {}", pv_name);
+        Ok(())
+    }
+
+    /// Put an enum value to a PV synchronously
+    /// 
+    /// # Arguments
+    /// * `value` - The enum index to set (typically 0-255)
+    pub fn put_enum(&mut self, pv_name: &str, value: u8, timeout: f64) -> Result<()> {
+        debug!("Putting enum value {} to PV: {} with timeout: {}s", value, pv_name, timeout);
+        self.context
+            .put_enum(pv_name, value, timeout)
+            .map_err(|e| self.convert_pvxs_error(e, pv_name))?;
+        debug!("Successfully put enum value to PV: {}", pv_name);
         Ok(())
     }
 
@@ -222,12 +206,21 @@ impl Client {
         }
     }
 
-    /// Helper method to convert PVXS errors to our error types with context
-    fn convert_pvxs_error(&self, err: PvxsError, pv_name: &str) -> Error {
+    /// Helper method to convert PVXS errors to rust error types with context
+    /// 
+    /// # Arguments
+    /// * `err` - The PvxsError to convert
+    /// * `pv_name` - The name of the PV involved in the error
+    /// * `timeout` - (Optional) The timeout value used in the operation
+    /// 
+    /// # Returns
+    /// * Converted Error type
+    ///
+    fn convert_pvxs_error(&self, err: PvxsError, pv_name: &str, timeout: f64) -> Error {
         let error_msg = err.to_string().to_lowercase();
         
         if error_msg.contains("timeout") {
-            Error::timeout(5.0) // Default timeout for error reporting
+            Error::timedout(timeout)
         } else if error_msg.contains("not found") || error_msg.contains("no server") {
             Error::pv_not_found(pv_name)
         } else if error_msg.contains("connection") || error_msg.contains("connect") {
@@ -235,6 +228,11 @@ impl Client {
         } else {
             Error::from(err)
         }
+    }
+
+    /// Overloaded helper method with default timeout
+    fn convert_pvxs_error(&self, err: PvxsError, pv_name: &str) -> Error {
+        self.convert_pvxs_error(err, pv_name, 5.0)
     }
 
     /// Create a monitor for a PV (simple interface)

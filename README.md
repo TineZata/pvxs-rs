@@ -1,6 +1,6 @@
 # pvxs-rs - High-level Rust bindings for EPICS PVXS
 
-High-level, idiomatic Rust bindings for [EPICS PVXS](https://github.com/epics-base/pvxs) (PVAccess) with separate Client and Server APIs.
+High-level, idiomatic Rust bindings for [EPICS PVXS](https://github.com/epics-base/pvxs) with separate Client and Server APIs.
 
 Built on top of [`epics-pvxs-sys`](https://github.com/TineZata/epics-pvxs-sys), this crate provides a safe, ergonomic interface for EPICS Process Variable operations.
 
@@ -13,7 +13,6 @@ Built on top of [`epics-pvxs-sys`](https://github.com/TineZata/epics-pvxs-sys), 
 - **High Performance**: Zero-copy operations where possible
 - **Rich Value Types**: Support for scalars, arrays, structures with timestamps and alarms
 - **Builder Patterns**: Fluent APIs for configuration
-
 
 ### Prerequisites
 
@@ -118,7 +117,7 @@ let units = value.get_string("units")?;
 // Alarm information
 let alarm = value.alarm_info();
 if alarm.has_alarm() {
-    println!("⚠️  Alarm: {}", alarm);
+    println!("Alarm: {}", alarm);
 }
 
 // Timestamp
@@ -163,11 +162,11 @@ cargo run --example server_basic
 
 - `client` (default) - Client API for connecting to PVs
 - `server` - Server API for providing PVs  
-- `async` - Async/await support with tokio (⚠️ experimental)
+- `async` - Async/await support with tokio (experimental)
 - `serde` - Serialization support for values
 - `full` - All features enabled
 
-### ⚠️ Current Limitations
+### Current Limitations
 
 - **Async Support**: The `async` feature is experimental due to C++ thread safety constraints in the underlying epics-pvxs library. The C++ types are not `Send`/`Sync`, making true async operations challenging.
 - **Limited PUT Operations**: The generic `put()` method supports `f64`, `i32`, `&str`, and `String` types, but currently only `f64` is fully functional. Other types will return a "not implemented" error until the underlying `epics-pvxs-sys` library adds support for them.

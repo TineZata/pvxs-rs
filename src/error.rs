@@ -65,7 +65,7 @@ impl Error {
     }
 
     /// Create a new timeout error
-    pub fn timeout(timeout: f64) -> Self {
+    pub fn timedout(timeout: f64) -> Self {
         Self::Timeout { timeout }
     }
 

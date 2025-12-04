@@ -6,28 +6,15 @@
 //! ## Features
 //!
 //! - **Client API**: Connect to EPICS IOCs, get/put/monitor PVs
-//! - **Server API**: Create PVXS servers and provide PVs  
-//! - **Async Support**: Optional tokio-based async operations
+//! - **Server API**: Create PVXS servers and provide both local and remote PVs  
+//! - **Async Support**: Tokio-based monitor and optional async operations
 //! - **Type Safety**: Strong typing with comprehensive error handling
 //! - **High Performance**: Zero-copy operations where possible
 //!
-//! ## Quick Start
-//!
-//! ```rust,no_run
-//! use pvxs::client::Client;
-//!
-//! fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let client = Client::new()?;
-//!     let value = client.get("MY:PV:NAME", 5.0)?;
-//!     println!("Value: {}", value);
-//!     Ok(())
-//! }
-//! ```
-//!
 //! ## Module Structure
 //!
-//! - [`client`] - Client API for connecting to EPICS PVs
-//! - [`server`] - Server API for providing EPICS PVs
+//! - [`client`] - Client API for connecting to EPICS PVs. This is optional and can be enabled with the `client` feature.
+//! - [`server`] - Server API for providing EPICS PVs. This is optional and can be enabled with the `server` feature.
 //! - [`types`] - Common types and value representations
 //! - [`error`] - Error types and handling
 
@@ -41,11 +28,11 @@ pub mod client;
 pub mod server;
 
 // Re-export commonly used types
-pub use error::{Error, Result};
+/*pub use error::{Error, Result};
 pub use types::{Value, Timestamp};
 
 #[cfg(feature = "client")]
 pub use client::{Client, Monitor, MonitorBuilder};
 
 #[cfg(feature = "server")]
-pub use server::Server;
+pub use server::Server;*/
