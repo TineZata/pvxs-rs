@@ -16,9 +16,9 @@ pub enum Error {
     #[error("Connection error: {message}")]
     ConnectionError { message: String },
 
-    /// Timeout during operation
-    #[error("Operation timed out after {timeout}s")]
-    Timeout { timeout: f64 },
+    /// Timed out during operation
+    #[error("Operation timed out after {timedout}s")]
+    Timedout { timedout: f64 },
 
     /// PV name not found
     #[error("PV not found: {pv_name}")]
@@ -66,7 +66,7 @@ impl Error {
 
     /// Create a new timeout error
     pub fn timedout(timeout: f64) -> Self {
-        Self::Timeout { timeout }
+        Self::Timedout { timedout: timeout }
     }
 
     /// Create a new PV not found error
@@ -86,7 +86,7 @@ impl Error {
 
     /// Check if this is a timeout error
     pub fn is_timeout(&self) -> bool {
-        matches!(self, Error::Timeout { .. })
+        matches!(self, Error::Timedout { .. })
     }
 
     /// Check if this is a connection error
