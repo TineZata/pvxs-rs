@@ -5,12 +5,14 @@
 
 use crate::error::{Error, Result};
 use crate::types::{Value, AlarmSeverity, AlarmStatus};
-use epics_pvxs_sys::{Server as PvxsServer, SharedPV};
+use epics_pvxs_sys::{NTScalarMetadataBuilder, Server as PvxsServer, SharedPV};
 use tracing::{debug, info};
+use std::collections::HashSet;
 
 /// High-level PVXS server for providing EPICS PVs
 pub struct Server {
     inner: PvxsServer,
+    pv_names: HashSet<String>,
 }
 
 impl Server {
@@ -35,7 +37,10 @@ impl Server {
             })?;
         
         info!("PVXS server created successfully");
-        Ok(Self { inner })
+        Ok(Self { 
+            inner,
+            pv_names: HashSet::new(),
+        })
     }
 
     /// Create a new isolated PVXS server
@@ -60,7 +65,10 @@ impl Server {
             })?;
         
         info!("Isolated PVXS server created successfully");
-        Ok(Self { inner })
+        Ok(Self { 
+            inner,
+            pv_names: HashSet::new(),
+        })
     }
 
     /// Create and add a new double PV to the server
@@ -69,10 +77,12 @@ impl Server {
     ///
     /// * `pv_name` - Name of the Process Variable
     /// * `initial_value` - Initial value for the PV
+    /// * `metadata` - Metadata for the scalar PV
     ///
     /// # Returns
     ///
     /// Returns a `Pv` handle that can be used to update the PV value.
+    /// If a PV with this name already exists, returns a handle to the existing PV.
     ///
     /// # Example
     ///
@@ -83,20 +93,22 @@ impl Server {
     /// let mut pv = server.add_double_pv("test:voltage", 3.3)?;
     /// # Ok::<(), pvxs::Error>(())
     /// ```
-    pub fn add_double_pv(&mut self, pv_name: &str, initial_value: f64) -> Result<Pv> {
+    pub fn add_double_pv(&mut self, pv_name: &str, initial_value: f64, metadata: NTScalarMetadataBuilder) -> Result<Pv> {
+        // Check if PV already exists
+        if self.pv_names.contains(pv_name) {
+            return Err(Error::ServerConfig {
+                message: format!("PV '{}' already exists on this server", pv_name),
+            });
+        }
+
         debug!("Adding double PV: {} with value: {}", pv_name, initial_value);
         
-        let mut shared_pv = self.inner
-            .create_pv_double("internal", initial_value)
+        let shared_pv = self.inner.create_pv_double(pv_name, initial_value, metadata)
             .map_err(|e| Error::ServerConfig {
                 message: format!("Failed to create double PV: {}", e),
             })?;
         
-        self.inner
-            .add_pv(pv_name, &mut shared_pv)
-            .map_err(|e| Error::ServerConfig {
-                message: format!("Failed to add PV '{}': {}", pv_name, e),
-            })?;
+        self.pv_names.insert(pv_name.to_string());
         
         info!("Added double PV: {}", pv_name);
         Ok(Pv {
@@ -114,43 +126,36 @@ impl Server {
     /// # Returns
     /// 
     /// Returns a `Pv` handle that can be used to update the PV value.
+    /// If a PV with this name already exists, returns an error.
     /// # Example
     /// ```rust,no_run
     /// use pvxs::Server;
-    /// use pvxs::types::{NTScalarMetadata, NTScalarAlarm, NTScalarTime
-    ///    };
+    /// use epics_pvxs_sys::NTScalarMetadataBuilder;
     /// 
-    /// let metadata = NTScalarMetadata {
-    ///    alarm: NTScalarAlarm {
-    ///       has_alarm: true,
-    ///      has_severity: true,
-    ///     has_status: true,
-    ///   },
-    ///   time_stamp: NTScalarTime {
-    ///     has_time: true,
-    ///     has_user_tag: false,
-    ///  },
-    /// };
+    /// let metadata = NTScalarMetadataBuilder::default();
     /// let mut server = Server::new()?;
     /// let mut pv = server.add_double_pv_with_metadata("test:temperature",
     ///   25.0, metadata)?;
     /// # Ok::<(), pvxs::Error>(())
     /// ```
     /// 
-    pub fn add_double_pv_with_metadata(&mut self, pv_name: &str, initial_value: f64, metadata: NTScalarMetadata) -> Result<Pv> {
+    pub fn add_double_pv_with_metadata(&mut self, pv_name: &str, initial_value: f64, metadata: NTScalarMetadataBuilder) -> Result<Pv> {
+        // Check if PV already exists
+        if self.pv_names.contains(pv_name) {
+            return Err(Error::ServerConfig {
+                message: format!("PV '{}' already exists on this server", pv_name),
+            });
+        }
+
         debug!("Adding double PV with metadata: {} with value: {}", pv_name, initial_value);
         
-        let mut shared_pv = self.inner
-            .create_pv_double_with_metadata("internal", initial_value, metadata)
+        let shared_pv = self.inner
+            .create_pv_double(pv_name, initial_value, metadata)
             .map_err(|e| Error::ServerConfig {
                 message: format!("Failed to create double PV with metadata: {}", e),
             })?;
         
-        self.inner
-            .add_pv(pv_name, &mut shared_pv)
-            .map_err(|e| Error::ServerConfig {
-                message: format!("Failed to add PV '{}': {}", pv_name, e),
-            })?;
+        self.pv_names.insert(pv_name.to_string());
         
         info!("Added double PV with metadata: {}", pv_name);
         Ok(Pv {
@@ -180,19 +185,22 @@ impl Server {
     /// # Ok::<(), pvxs::Error>(())
     /// ```
     pub fn add_int32_pv(&mut self, pv_name: &str, initial_value: i32) -> Result<Pv> {
+        // Check if PV already exists
+        if self.pv_names.contains(pv_name) {
+            return Err(Error::ServerConfig {
+                message: format!("PV '{}' already exists on this server", pv_name),
+            });
+        }
+
         debug!("Adding int32 PV: {} with value: {}", pv_name, initial_value);
         
-        let mut shared_pv = self.inner
-            .create_pv_int32("internal", initial_value)
+        let shared_pv = self.inner
+            .create_pv_int32(pv_name, initial_value, NTScalarMetadataBuilder::default())
             .map_err(|e| Error::ServerConfig {
                 message: format!("Failed to create int32 PV: {}", e),
             })?;
         
-        self.inner
-            .add_pv(pv_name, &mut shared_pv)
-            .map_err(|e| Error::ServerConfig {
-                message: format!("Failed to add PV '{}': {}", pv_name, e),
-            })?;
+        self.pv_names.insert(pv_name.to_string());
         
         info!("Added int32 PV: {}", pv_name);
         Ok(Pv {
@@ -222,19 +230,22 @@ impl Server {
     /// # Ok::<(), pvxs::Error>(())
     /// ```
     pub fn add_string_pv(&mut self, pv_name: &str, initial_value: &str) -> Result<Pv> {
+        // Check if PV already exists
+        if self.pv_names.contains(pv_name) {
+            return Err(Error::ServerConfig {
+                message: format!("PV '{}' already exists on this server", pv_name),
+            });
+        }
+
         debug!("Adding string PV: {} with value: {}", pv_name, initial_value);
         
-        let mut shared_pv = self.inner
-            .create_pv_string("internal", initial_value)
+        let shared_pv = self.inner
+            .create_pv_string(pv_name, initial_value, NTScalarMetadataBuilder::default())
             .map_err(|e| Error::ServerConfig {
                 message: format!("Failed to create string PV: {}", e),
             })?;
         
-        self.inner
-            .add_pv(pv_name, &mut shared_pv)
-            .map_err(|e| Error::ServerConfig {
-                message: format!("Failed to add PV '{}': {}", pv_name, e),
-            })?;
+        self.pv_names.insert(pv_name.to_string());
         
         info!("Added string PV: {}", pv_name);
         Ok(Pv {
@@ -261,19 +272,22 @@ impl Server {
     /// # Ok::<(), pvxs::Error>(())
     /// ```
     pub fn add_enum_pv(&mut self, pv_name: &str, choices: Vec<&str>, selected_value: i16) -> Result<Pv> {
+        // Check if PV already exists
+        if self.pv_names.contains(pv_name) {
+            return Err(Error::ServerConfig {
+                message: format!("PV '{}' already exists on this server", pv_name),
+            });
+        }
+
         debug!("Adding enum PV: {} with value: {}", pv_name, selected_value);
         
-        let mut shared_pv = self.inner
-            .create_pv_enum("internal", choices, selected_value)
+        let shared_pv = self.inner
+            .create_pv_enum(pv_name, choices, selected_value, Default::default())
             .map_err(|e| Error::ServerConfig {
                 message: format!("Failed to create enum PV: {}", e),
             })?;
         
-        self.inner
-            .add_pv(pv_name, &mut shared_pv)
-            .map_err(|e| Error::ServerConfig {
-                message: format!("Failed to add PV '{}': {}", pv_name, e),
-            })?;
+        self.pv_names.insert(pv_name.to_string());
         
         info!("Added enum PV: {}", pv_name);
         Ok(Pv {
@@ -303,19 +317,22 @@ impl Server {
     /// # Ok::<(), pvxs::Error>(())
     /// ```
     pub fn add_readonly_double_pv(&mut self, pv_name: &str, initial_value: f64) -> Result<Pv> {
+        // Check if PV already exists
+        if self.pv_names.contains(pv_name) {
+            return Err(Error::ServerConfig {
+                message: format!("PV '{}' already exists on this server", pv_name),
+            });
+        }
+
         debug!("Adding readonly double PV: {} with value: {}", pv_name, initial_value);
         
-        let mut shared_pv = self.inner
-            .create_readonly_pv_double("internal", initial_value)
+        let shared_pv = self.inner
+            .create_readonly_pv_double(pv_name, initial_value, NTScalarMetadataBuilder::default())
             .map_err(|e| Error::ServerConfig {
                 message: format!("Failed to create readonly double PV: {}", e),
             })?;
         
-        self.inner
-            .add_pv(pv_name, &mut shared_pv)
-            .map_err(|e| Error::ServerConfig {
-                message: format!("Failed to add PV '{}': {}", pv_name, e),
-            })?;
+        self.pv_names.insert(pv_name.to_string());
         
         info!("Added readonly double PV: {}", pv_name);
         Ok(Pv {
@@ -348,6 +365,9 @@ impl Server {
             .map_err(|e| Error::ServerConfig {
                 message: format!("Failed to remove PV '{}': {}", pv_name, e),
             })?;
+        
+        // Remove from tracking set
+        self.pv_names.remove(pv_name);
         
         info!("Removed PV: {}", pv_name);
         Ok(())

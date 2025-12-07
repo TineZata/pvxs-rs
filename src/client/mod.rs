@@ -111,8 +111,7 @@ impl Client {
     /// Put a double value to a PV synchronously
     pub fn put_double(&mut self, pv_name: &str, value: f64, timeout: f64) -> Result<()> {
         debug!("Putting double value {} to PV: {} with timeout: {}s", value, pv_name, timeout);
-        self.context
-            .put_double(pv_name, value, timeout)
+        self.context.put_double(pv_name, value, timeout)
             .map_err(|e| self.convert_pvxs_error(e, pv_name, timeout))?;
         debug!("Successfully put value to PV: {}", pv_name);
         Ok(())
