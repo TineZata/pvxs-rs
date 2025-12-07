@@ -2,10 +2,18 @@
 //!
 //! This module provides a high-level server interface for creating EPICS
 //! servers that can provide Process Variables to clients.
+//!
+//! # Design Philosophy
+//!
+//! This API improves upon the low-level -sys bindings by providing:
+//! - **Builder pattern** for configuring PVs with sensible defaults
+//! - **Type-safe APIs** for different PV types
+//! - **Simplified metadata** - optional, with defaults
+//! - **Better ergonomics** - chainable methods, clear intent
 
 use crate::error::{Error, Result};
-use crate::types::{Value, AlarmSeverity, AlarmStatus};
-use epics_pvxs_sys::{NTScalarMetadataBuilder, Server as PvxsServer, SharedPV};
+use crate::types::Value;
+use epics_pvxs_sys::{NTScalarMetadataBuilder, Server as PvxsServer, SharedPV, DisplayMetadata, ControlMetadata};
 use tracing::{debug, info};
 use std::collections::HashSet;
 
@@ -456,6 +464,410 @@ impl std::fmt::Debug for Server {
     }
 }
 
+// ============================================================================
+// PV Builder Pattern - High-level ergonomic API
+// ============================================================================
+
+/// Builder for creating a double-precision floating point PV
+///
+/// This provides a fluent API for configuring PVs with sensible defaults.
+/// Metadata fields are optional and only included if explicitly set.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use pvxs::{Server, DoublePvBuilder};
+///
+/// let mut server = Server::new()?;
+/// 
+/// // Simple PV with just a value
+/// let pv = server.double_pv("simple:voltage")
+///     .initial_value(3.3)
+///     .add()?;
+///
+/// // PV with metadata
+/// let pv = server.double_pv("device:temperature")
+///     .initial_value(20.0)
+///     .units("degC")
+///     .display_range(0.0, 100.0)
+///     .precision(2)
+///     .description("Device temperature sensor")
+///     .add()?;
+/// # Ok::<(), pvxs::Error>(())
+/// ```
+pub struct DoublePvBuilder<'a> {
+    server: &'a mut Server,
+    name: String,
+    initial_value: f64,
+    metadata: NTScalarMetadataBuilder,
+    has_metadata: bool,
+}
+
+impl<'a> DoublePvBuilder<'a> {
+    fn new(server: &'a mut Server, name: impl Into<String>) -> Self {
+        Self {
+            server,
+            name: name.into(),
+            initial_value: 0.0,
+            metadata: NTScalarMetadataBuilder::new(),
+            has_metadata: false,
+        }
+    }
+
+    /// Set the initial value for this PV
+    pub fn initial_value(mut self, value: f64) -> Self {
+        self.initial_value = value;
+        self
+    }
+
+    /// Set the engineering units for this value (e.g., "mm", "degC", "V")
+    pub fn units(mut self, units: impl Into<String>) -> Self {
+        self.has_metadata = true;
+        // Update display metadata with units
+        let display = DisplayMetadata {
+            limit_low: 0,
+            limit_high: 0,
+            description: String::new(),
+            units: units.into(),
+            precision: 0,
+        };
+        self.metadata = self.metadata.display(display);
+        self
+    }
+
+    /// Set display limits for UI rendering (min, max)
+    pub fn display_range(mut self, low: f64, high: f64) -> Self {
+        self.has_metadata = true;
+        let display = DisplayMetadata {
+            limit_low: low as i64,
+            limit_high: high as i64,
+            description: String::new(),
+            units: String::new(),
+            precision: 0,
+        };
+        self.metadata = self.metadata.display(display);
+        self
+    }
+
+    /// Set the precision (number of decimal places) for display
+    pub fn precision(mut self, precision: i32) -> Self {
+        self.has_metadata = true;
+        let display = DisplayMetadata {
+            limit_low: 0,
+            limit_high: 0,
+            description: String::new(),
+            units: String::new(),
+            precision,
+        };
+        self.metadata = self.metadata.display(display);
+        self
+    }
+
+    /// Set a description for this PV
+    pub fn description(mut self, desc: impl Into<String>) -> Self {
+        self.has_metadata = true;
+        let display = DisplayMetadata {
+            limit_low: 0,
+            limit_high: 0,
+            description: desc.into(),
+            units: String::new(),
+            precision: 0,
+        };
+        self.metadata = self.metadata.display(display);
+        self
+    }
+
+    /// Set control limits for operator input (min, max, step)
+    pub fn control_range(mut self, low: f64, high: f64, min_step: f64) -> Self {
+        self.has_metadata = true;
+        self.metadata = self.metadata.control(ControlMetadata {
+            limit_low: low,
+            limit_high: high,
+            min_step,
+        });
+        self
+    }
+
+    /// Add this PV to the server
+    ///
+    /// Consumes the builder and returns a `Pv` handle for updating the value.
+    pub fn add(self) -> Result<Pv> {
+        // Check for duplicate
+        if self.server.pv_names.contains(&self.name) {
+            return Err(Error::ServerConfig {
+                message: format!("PV '{}' already exists on this server", self.name),
+            });
+        }
+
+        debug!("Adding double PV '{}' with value: {}", self.name, self.initial_value);
+
+        // Create the PV using -sys API
+        let metadata = if self.has_metadata {
+            self.metadata
+        } else {
+            NTScalarMetadataBuilder::default()
+        };
+
+        let shared_pv = self.server.inner.create_pv_double(&self.name, self.initial_value, metadata)
+            .map_err(|e| Error::ServerConfig {
+                message: format!("Failed to create double PV '{}': {}", self.name, e),
+            })?;
+
+        self.server.pv_names.insert(self.name.clone());
+        info!("Added double PV: {}", self.name);
+
+        Ok(Pv {
+            inner: shared_pv,
+            name: self.name,
+        })
+    }
+}
+
+/// Builder for creating an integer (int32) PV
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use pvxs::Server;
+///
+/// let mut server = Server::new()?;
+/// 
+/// let counter = server.int32_pv("device:counter")
+///     .initial_value(0)
+///     .description("Event counter")
+///     .add()?;
+/// # Ok::<(), pvxs::Error>(())
+/// ```
+pub struct Int32PvBuilder<'a> {
+    server: &'a mut Server,
+    name: String,
+    initial_value: i32,
+    metadata: NTScalarMetadataBuilder,
+    has_metadata: bool,
+}
+
+impl<'a> Int32PvBuilder<'a> {
+    fn new(server: &'a mut Server, name: impl Into<String>) -> Self {
+        Self {
+            server,
+            name: name.into(),
+            initial_value: 0,
+            metadata: NTScalarMetadataBuilder::new(),
+            has_metadata: false,
+        }
+    }
+
+    /// Set the initial value for this PV
+    pub fn initial_value(mut self, value: i32) -> Self {
+        self.initial_value = value;
+        self
+    }
+
+    /// Set a description for this PV
+    pub fn description(mut self, desc: impl Into<String>) -> Self {
+        self.has_metadata = true;
+        let display = DisplayMetadata {
+            limit_low: 0,
+            limit_high: 0,
+            description: desc.into(),
+            units: String::new(),
+            precision: 0,
+        };
+        self.metadata = self.metadata.display(display);
+        self
+    }
+
+    /// Set the engineering units
+    pub fn units(mut self, units: impl Into<String>) -> Self {
+        self.has_metadata = true;
+        let display = DisplayMetadata {
+            limit_low: 0,
+            limit_high: 0,
+            description: String::new(),
+            units: units.into(),
+            precision: 0,
+        };
+        self.metadata = self.metadata.display(display);
+        self
+    }
+
+    /// Add this PV to the server
+    pub fn add(self) -> Result<Pv> {
+        if self.server.pv_names.contains(&self.name) {
+            return Err(Error::ServerConfig {
+                message: format!("PV '{}' already exists on this server", self.name),
+            });
+        }
+
+        debug!("Adding int32 PV '{}' with value: {}", self.name, self.initial_value);
+
+        let metadata = if self.has_metadata {
+            self.metadata
+        } else {
+            NTScalarMetadataBuilder::default()
+        };
+
+        let shared_pv = self.server.inner.create_pv_int32(&self.name, self.initial_value, metadata)
+            .map_err(|e| Error::ServerConfig {
+                message: format!("Failed to create int32 PV '{}': {}", self.name, e),
+            })?;
+
+        self.server.pv_names.insert(self.name.clone());
+        info!("Added int32 PV: {}", self.name);
+
+        Ok(Pv {
+            inner: shared_pv,
+            name: self.name,
+        })
+    }
+}
+
+/// Builder for creating a string PV
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use pvxs::Server;
+///
+/// let mut server = Server::new()?;
+/// 
+/// let status = server.string_pv("device:status")
+///     .initial_value("IDLE")
+///     .description("Device status message")
+///     .add()?;
+/// # Ok::<(), pvxs::Error>(())
+/// ```
+pub struct StringPvBuilder<'a> {
+    server: &'a mut Server,
+    name: String,
+    initial_value: String,
+    metadata: NTScalarMetadataBuilder,
+    has_metadata: bool,
+}
+
+impl<'a> StringPvBuilder<'a> {
+    fn new(server: &'a mut Server, name: impl Into<String>) -> Self {
+        Self {
+            server,
+            name: name.into(),
+            initial_value: String::new(),
+            metadata: NTScalarMetadataBuilder::new(),
+            has_metadata: false,
+        }
+    }
+
+    /// Set the initial value for this PV
+    pub fn initial_value(mut self, value: impl Into<String>) -> Self {
+        self.initial_value = value.into();
+        self
+    }
+
+    /// Set a description for this PV
+    pub fn description(mut self, desc: impl Into<String>) -> Self {
+        self.has_metadata = true;
+        let display = DisplayMetadata {
+            limit_low: 0,
+            limit_high: 0,
+            description: desc.into(),
+            units: String::new(),
+            precision: 0,
+        };
+        self.metadata = self.metadata.display(display);
+        self
+    }
+
+    /// Add this PV to the server
+    pub fn add(self) -> Result<Pv> {
+        if self.server.pv_names.contains(&self.name) {
+            return Err(Error::ServerConfig {
+                message: format!("PV '{}' already exists on this server", self.name),
+            });
+        }
+
+        debug!("Adding string PV '{}' with value: '{}'", self.name, self.initial_value);
+
+        let metadata = if self.has_metadata {
+            self.metadata
+        } else {
+            NTScalarMetadataBuilder::default()
+        };
+
+        let shared_pv = self.server.inner.create_pv_string(&self.name, &self.initial_value, metadata)
+            .map_err(|e| Error::ServerConfig {
+                message: format!("Failed to create string PV '{}': {}", self.name, e),
+            })?;
+
+        self.server.pv_names.insert(self.name.clone());
+        info!("Added string PV: {}", self.name);
+
+        Ok(Pv {
+            inner: shared_pv,
+            name: self.name,
+        })
+    }
+}
+
+// ============================================================================
+// Server - Add builder methods
+// ============================================================================
+
+impl Server {
+    /// Create a new double PV builder
+    ///
+    /// Returns a builder that can be configured with metadata before adding to the server.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pvxs::Server;
+    ///
+    /// let mut server = Server::new()?;
+    /// let temp_pv = server.double_pv("device:temp")
+    ///     .initial_value(25.0)
+    ///     .units("degC")
+    ///     .precision(1)
+    ///     .add()?;
+    /// # Ok::<(), pvxs::Error>(())
+    /// ```
+    pub fn double_pv(&mut self, name: impl Into<String>) -> DoublePvBuilder {
+        DoublePvBuilder::new(self, name)
+    }
+
+    /// Create a new int32 PV builder
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pvxs::Server;
+    ///
+    /// let mut server = Server::new()?;
+    /// let counter = server.int32_pv("device:count")
+    ///     .initial_value(0)
+    ///     .add()?;
+    /// # Ok::<(), pvxs::Error>(())
+    /// ```
+    pub fn int32_pv(&mut self, name: impl Into<String>) -> Int32PvBuilder {
+        Int32PvBuilder::new(self, name)
+    }
+
+    /// Create a new string PV builder
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pvxs::Server;
+    ///
+    /// let mut server = Server::new()?;
+    /// let status = server.string_pv("device:status")
+    ///     .initial_value("IDLE")
+    ///     .add()?;
+    /// # Ok::<(), pvxs::Error>(())
+    /// ```
+    pub fn string_pv(&mut self, name: impl Into<String>) -> StringPvBuilder {
+        StringPvBuilder::new(self, name)
+    }
+}
+
 /// A handle to a Process Variable in the server
 ///
 /// This allows updating the PV value and reading its current value.
@@ -565,125 +977,6 @@ impl Pv {
             .post_enum(value)
             .map_err(|e| Error::ServerConfig {
                 message: format!("Failed to post enum index to '{}': {}", self.name, e),
-            })?;
-        
-        Ok(())
-    }
-
-    /// Update the PV with a double value and alarm information
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - New value to post
-    /// * `severity` - Alarm severity (0=NO_ALARM, 1=MINOR, 2=MAJOR, 3=INVALID)
-    /// * `status` - Alarm status code (0=NO_ALARM, 1=DEVICE, 2=DRIVER, 3=RECORD, 4=DATABASE, 5=CONFIG, 6=UNDEFINED, 7=CLIENT)
-    /// * `message` - Alarm message
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// # use pvxs::Server;
-    /// # let mut server = Server::new().unwrap();
-    /// let mut pv = server.add_double_pv("test:temp", 20.0)?;
-    /// pv.post_double_with_alarm(100.0, 2, 0, "High temperature")?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn post_double_with_alarm(&mut self, value: f64, severity: AlarmSeverity, status: AlarmStatus, message: &str) -> Result<()> {
-        debug!("Posting double value {} with alarm to PV: {}", value, self.name);
-        
-        self.inner
-            .post_double_with_alarm(value, severity.as_int(), status.as_int(), message)
-            .map_err(|e| Error::ServerConfig {
-                message: format!("Failed to post double value with alarm to '{}': {}", self.name, e),
-            })?;
-        
-        Ok(())
-    }
-
-    /// Update the PV with an int32 value and alarm information
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - New value to post
-    /// * `severity` - Alarm severity (0=NO_ALARM, 1=MINOR, 2=MAJOR, 3=INVALID)
-    /// * `status` - Alarm status code
-    /// * `message` - Alarm message
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// # use pvxs::Server;
-    /// # let mut server = Server::new().unwrap();
-    /// let mut pv = server.add_int32_pv("test:errors", 0)?;
-    /// pv.post_int32_with_alarm(10, 1, 0, "Error count elevated")?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn post_int32_with_alarm(&mut self, value: i32, severity: AlarmSeverity, status: AlarmStatus, message: &str) -> Result<()> {
-        debug!("Posting int32 value {} with alarm to PV: {}", value, self.name);
-        
-        self.inner
-            .post_int32_with_alarm(value, severity.as_int(), status.as_int(), message)
-            .map_err(|e| Error::ServerConfig {
-                message: format!("Failed to post int32 value with alarm to '{}': {}", self.name, e),
-            })?;
-        
-        Ok(())
-    }
-
-    /// Update the PV with a string value and alarm information
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - New value to post
-    /// * `severity` - Alarm severity (0=NO_ALARM, 1=MINOR, 2=MAJOR, 3=INVALID)
-    /// * `status` - Alarm status code
-    /// * `message` - Alarm message
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// # use pvxs::Server;
-    /// # let mut server = Server::new().unwrap();
-    /// let mut pv = server.add_string_pv("test:status", "OK")?;
-    /// pv.post_string_with_alarm("ERROR", 2, 0, "System failure")?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn post_string_with_alarm(&mut self, value: &str, severity: AlarmSeverity, status: AlarmStatus, message: &str) -> Result<()> {
-        debug!("Posting string value '{}' with alarm to PV: {}", value, self.name);
-        
-        self.inner
-            .post_string_with_alarm(value, severity.as_int(), status.as_int(), message)
-            .map_err(|e| Error::ServerConfig {
-                message: format!("Failed to post string value with alarm to '{}': {}", self.name, e),
-            })?;
-        
-        Ok(())
-    }
-
-    /// Update the PV enum selected value with alarm information
-    /// 
-    /// # Arguments
-    /// * `value` - New enum index to post
-    /// * `severity` - Alarm severity (0=NO_ALARM, 1=
-    /// MINOR, 2=MAJOR, 3=INVALID)
-    /// * `status` - Alarm status code
-    /// * `message` - Alarm message
-    /// # Example
-    /// ```rust,no_run
-    /// # use pvxs::Server;
-    /// # let mut server = Server::new().unwrap();
-    /// let mut pv = server.add_enum_pv("test:mode", &["AUTO", "MANUAL", "TECTONIC"], 0)?;
-    /// pv.post_enum_with_alarm(1, AlarmSeverity::Minor, AlarmStatus::Device, "Mode changed")?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    /// 
-    pub fn post_enum_with_alarm(&mut self, value: i16, severity: AlarmSeverity, status: AlarmStatus, message: &str) -> Result<()> {
-        debug!("Posting enum index {} with alarm to PV: {}", value, self.name);
-        
-        self.inner
-            .post_enum_with_alarm(value, severity.as_int(), status.as_int(), message)
-            .map_err(|e| Error::ServerConfig {
-                message: format!("Failed to post enum index with alarm to '{}': {}", self.name, e),
             })?;
         
         Ok(())

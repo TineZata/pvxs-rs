@@ -4,7 +4,7 @@ pub mod putvalue;
 pub mod monitor;
 
 // Re-export for convenience
-pub use monitor::{Monitor, MonitorBuilder};
+pub use monitor::{Monitor, MonitorBuilder, MonitorEvent};
 pub use putvalue::PutValue;
 
 use crate::error::{Error, Result};

@@ -48,6 +48,10 @@ pub enum Error {
     #[error("Invalid configuration: {message}")]
     InvalidConfig { message: String },
 
+    /// Monitor event (connection/disconnection/finished)
+    #[error("Monitor event: {message}")]
+    MonitorEvent { message: String },
+
     /// IO error
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
