@@ -1,2 +1,2 @@
 # pvxs-rs
-PVXS rust wrapper
+EPICS PVXS reimplementation in rust.
