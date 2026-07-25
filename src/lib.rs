@@ -1,42 +1,76 @@
-// Enable Rust features or warnings (optional but helpful)
-//#![warn(missing_docs)]
-//#![warn(rust_2018_idioms)]
-
-//! # PVXS Rust Wrapper
-//! A Rust wrapper for the PVXS library, providing safe and ergonomic bindings for interacting
-//! with the EPICS PVXS library.
+// Copyright 2026 Tine Zata
+// SPDX-License-Identifier: MPL-2.0
+//! Pure-Rust pvAccess implementation — same public API as pvxs-sys,
+//! no C++ toolchain, no EPICS_BASE, no DLLs.
 //!
+//! ## Overview
+//!
+//! This crate provides the same surface as `pvxs-sys` backed entirely by Rust.
+//! Consumers can swap the dependency without source changes.
+//!
+//! ## Client
+//! - **GET**: [`Context::get`]
+//! - **PUT**: [`Context::put_double`], [`Context::put_int32`], [`Context::put_string`],
+//!   [`Context::put_enum`], and their `_array` variants
+//! - **Monitor**: [`Context::monitor_builder`] → [`MonitorBuilder::exec`] → [`Monitor::pop`]
+//! - **RPC**: [`Context::rpc`] → [`Rpc::execute`]
+//!
+//! ## Server
+//! - **Start**: [`Server::start_from_env`] or [`Server::start_isolated`]
+//! - **PV creation**: `create_pv_double`, `create_pv_int32`, `create_pv_string`,
+//!   `create_pv_enum`, and their `_array` variants
+//! - **POST**: `post_double`, `post_int32`, `post_string`, `post_enum`, and `_array` variants
+//! - **Fetch**: `fetch_double`, `fetch_int32`, `fetch_string`, `fetch_enum`
+//! - **Stop**: [`Server::stop_drop`]
+//! - **Handle**: [`ServerHandle`]
+//!
+//! ## Metadata & Alarms
+//! - [`NTScalarMetadataBuilder`] / [`NTEnumMetadataBuilder`]
+//! - [`ControlMetadata`], [`AlarmMetadata`], [`DisplayMetadata`]
+//! - [`AlarmSeverity`], [`AlarmStatus`]
+//!
+//! ## Network status
+//! The in-memory server/client state machine is fully implemented.
+//! The pvAccess TCP/UDP transport layer is a work in progress — see `TODO.md`.
 
-// Re-export modules
-pub mod bin; // Raw bindings to the PVXS library
-pub mod version; // Version information for the wrapper
-pub mod std_types; // Standard types for PVXS
-pub mod client; // Client context for PVXS
-pub mod wrapper; // Wrapper for the PVXS library
-pub mod epics; // EPICS types for PVXS
-pub mod array; // Array types for PVXS
-pub mod value; // Value types for PVXS
-pub mod typecode; // Typecode types for PVXS
-pub mod storetype; // Storetype types for PVXS
+pub mod alarms;
+pub mod client;
+pub mod metadata;
+pub mod server;
+pub mod value;
 
+use std::fmt;
 
-// Publicly exposed functions or types from submodules
-//pub use client::{
-//    Context,
-//    Config,
-//};
-/*pub use std_types::{
-    GetBuilder,
-    StdBasicString,
-};*/
-
-pub use wrapper::{
-    get_version_str,
-    get_version_int,
-    get_version_abi_int,
-    get_context_from_env,
-    get_client_config,
-    //get_context_info,
-    client_is_pv_connected,
+pub use alarms::{compute_alarm_for_scalar, AlarmConfig, AlarmResult, AlarmSeverity, AlarmStatus};
+pub use client::{Context, Monitor, MonitorBuilder, MonitorEvent, Rpc};
+pub use metadata::{AlarmMetadata, ControlMetadata, DisplayMetadata};
+pub use server::{
+    FetchedDouble, FetchedDoubleArray, FetchedEnum, FetchedInt32, FetchedInt32Array, FetchedString,
+    FetchedStringArray, NTEnumMetadataBuilder, NTScalarMetadataBuilder, Server, ServerHandle,
 };
+pub use value::{FieldType, Value};
 
+/// Convenience type alias — every fallible operation in this crate returns this.
+pub type Result<T> = std::result::Result<T, PvxsError>;
+
+/// Error type for pvxs-rs operations.
+#[derive(Debug, Clone)]
+pub struct PvxsError {
+    message: String,
+}
+
+impl PvxsError {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl fmt::Display for PvxsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "pvxs error: {}", self.message)
+    }
+}
+
+impl std::error::Error for PvxsError {}

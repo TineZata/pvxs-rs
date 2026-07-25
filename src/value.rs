@@ -1,583 +1,466 @@
-use std:: sync::Arc;
-use libloading::Symbol;
+// Copyright 2026 Tine Zata
+// SPDX-License-Identifier: MPL-2.0
+use std::collections::HashMap;
+use std::fmt;
 
-use crate::{bin::LoadLib, std_types::{StdSharedPtr, StdString}, storetype::StoreType, typecode::TypeCode};
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct FieldDesc {
-    _unused: [u8; 0],
-}
-
-/// Generic data container
-/// 
-///  References a single data field, which may be free-standing (eg. \"int x = 5;\")
-/// or a member of an enclosing Struct, or an element in an array of Struct.
-/// 
-/// - Use valid() (or operator bool() ) to determine if pointed to a valid field.
-/// - Use operator[] to traverse within a Kind::Compound field.
-/// 
-/// ```cpp 
-/// Value val = nt::NTScalar{TypeCode::Int32}.create();
-/// val[\"value\"] = 42;
-/// Value alias = val;
-/// assert(alias[\"value\"].as<int32_t>()==42); // 'alias' is a second reference to the same Struct
+/// A PVAccess value container — pure-Rust replacement for the cxx-backed ValueWrapper.
+///
+/// Represents a structured data value returned from pvAccess operations.
+/// Values have a hierarchical structure with named fields, accessed by
+/// dot-separated paths (e.g. `"alarm.severity"`).
+///
+/// # Example
+///
 /// ```
-#[repr(C)]
-#[derive(Debug)]
+/// use pvxs::Value;
+///
+/// let mut v = Value::new();
+/// v.set_field_double("value", 3.14);
+/// assert_eq!(v.get_field_double("value").unwrap(), 3.14);
+/// ```
+#[derive(Debug, Clone, Default)]
 pub struct Value {
-    pub store: StdSharedPtr,
-    pub desc: *const FieldDesc,
+    fields: HashMap<String, FieldValue>,
 }
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct ValueHelper {
-    _unused: [u8; 0],
-}
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct ValueIAll {
-    pub _address: u8,
-}
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of pvxs_Value__IAll"][::std::mem::size_of::<ValueIAll>() - 1usize];
-    ["Alignment of pvxs_Value__IAll"][::std::mem::align_of::<ValueIAll>() - 1usize];
-};
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct ValueIChildren {
-    pub _address: u8,
-}
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of pvxs_Value__IChildren"][::std::mem::size_of::<ValueIChildren>() - 1usize];
-    ["Alignment of pvxs_Value__IChildren"]
-        [::std::mem::align_of::<ValueIChildren>() - 1usize];
-};
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct ValueIMarked {
-    pub nextcheck: usize,
-}
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of pvxs_Value__IMarked"][::std::mem::size_of::<ValueIMarked>() - 8usize];
-    ["Alignment of pvxs_Value__IMarked"][::std::mem::align_of::<ValueIMarked>() - 8usize];
-    ["Offset of field: pvxs_Value__IMarked::nextcheck"]
-        [::std::mem::offset_of!(ValueIMarked, nextcheck) - 0usize];
-};
-pub type ValueIAllType = ValueIterable;
-pub type ValueIChildrenType = ValueIterable;
-pub type ValueIMarkedType = ValueIterable;
-#[doc = "! Provides options to control printing of a Value via std::ostream."]
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct ValueFmt {
-    pub top: *const Value,
-    pub _limit: usize,
-    pub _format: ValueFmtFormatT,
-    pub _show_value: bool,
-}
-pub const VALUE_FMT_FORMAT_T_TREE: ValueFmtFormatT = 0;
-pub const VALUE_FMT_FORMAT_T_DELTA: ValueFmtFormatT = 1;
-pub type ValueFmtFormatT = ::std::os::raw::c_int;
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of pvxs_Value_Fmt"][::std::mem::size_of::<ValueFmt>() - 24usize];
-    ["Alignment of pvxs_Value_Fmt"][::std::mem::align_of::<ValueFmt>() - 8usize];
-    ["Offset of field: pvxs_Value_Fmt::top"][::std::mem::offset_of!(ValueFmt, top) - 0usize];
-    ["Offset of field: pvxs_Value_Fmt::_limit"]
-        [::std::mem::offset_of!(ValueFmt, _limit) - 8usize];
-    ["Offset of field: pvxs_Value_Fmt::_format"]
-        [::std::mem::offset_of!(ValueFmt, _format) - 16usize];
-    ["Offset of field: pvxs_Value_Fmt::_showValue"]
-        [::std::mem::offset_of!(ValueFmt, _show_value) - 20usize];
-};
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of pvxs_Value"][::std::mem::size_of::<Value>() - 24usize];
-    ["Alignment of pvxs_Value"][::std::mem::align_of::<Value>() - 8usize];
-    ["Offset of field: pvxs_Value::store"][::std::mem::offset_of!(Value, store) - 0usize];
-    ["Offset of field: pvxs_Value::desc"][::std::mem::offset_of!(Value, desc) - 16usize];
-};
-
-/// allocate new storage, with default values
-pub unsafe fn pvxs_value_clone_empty(this: *const Value, pvxs_library: Arc<LoadLib>) -> Value 
-{
-    // Load the symbol for `cloneEmpty`
-    let func: Symbol<unsafe extern "C" fn(*const Value) -> Value> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"??cloneEmpty@Value@pvxs@@QEBA?AV12@XZ"
-        } else if cfg!(target_os = "linux") {
-            b"_ZN4pvxs5Value9cloneEmptyEv"
-        } else {
-            b""
-        })
-        .expect("Function `cloneEmpty` not found");
-    func(this)
+/// The type of a field stored in a [`Value`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldType {
+    Double,
+    Int32,
+    Int64,
+    Bool,
+    String,
+    Enum,
+    DoubleArray,
+    Int32Array,
+    StringArray,
 }
 
-/// Allocate new storage and copy in our values
-pub unsafe fn pvxs_value_clone(this: *const Value, pvxs_library: Arc<LoadLib>) -> Value {
-    // Load the symbol for `clone`
-    let func: Symbol<unsafe extern "C" fn(*const Value) -> Value> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"?clone@Value@pvxs@@QEBA?AV12@XZ"
-        } else if cfg!(target_os = "linux") {
-            b"_ZN4pvxs5Value5cloneEv"
-        } else {
-            b""
-        })
-        .expect("Function `clone` not found");
-    func(this)
-}
-
-/// Copy value(s) from other.
-/// Acts like from(o) for kind==Kind::Compound .
-/// Acts like from(o.as<T>()) for kind!=Kind::Compound
-pub unsafe fn pvxs_value_assign(this: *mut Value, o: *const Value, pvxs_library: Arc<LoadLib>) -> *mut Value {
-    // Load the symbol for `assign`
-    let func: Symbol<unsafe extern "C" fn(*mut Value, *const Value) -> *mut Value> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"??assign@Value@pvxs@@QEAAAEAV12@AEBV12@@Z"
-        } else if cfg!(target_os = "linux") {
-            b"_ZN4pvxs5Value6assignERKS0_"
-        } else {
-            b""
-        })
-        .expect("Function `assign` not found");
-    func(this, o)
-}
-
-/// Use to allocate members for an array of Struct and array of Union
-pub unsafe fn pvxs_value_alloc_member(this: *mut Value, pvxs_library: Arc<LoadLib>) -> Value {
-    // Load the symbol for `allocMember`
-    let func: Symbol<unsafe extern "C" fn(*mut Value) -> Value> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"?allocMember@Value@pvxs@@QEAA?AV12@XZ"
-        } else if cfg!(target_os = "linux") {
-            b"_ZN4pvxs5Value11allocMemberEv"
-        } else {
-            b""
-        })
-        .expect("Function `allocMember` not found");
-    func(this)
-}
-
-/// Restore to newly allocated state.
-/// 
-/// Free any allocation for array or string values, zero numeric values.
-/// unmark() all fields.
-/// 
-/// @since 1.1.0
-pub unsafe fn pvxs_value_clear(this: *mut Value, pvxs_library: Arc<LoadLib>) {
-    // Load the symbol for `clear`
-    let func: Symbol<unsafe extern "C" fn(*mut Value) -> ()> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"?clear@Value@pvxs@@QEAAXXZ"
-        } else if cfg!(target_os = "linux") {
-            b"_ZN4pvxs5Value5clearEv"
-        } else {
-            b""
-        })
-        .expect("Function `clear` not found");
-    func(this)
-}
-
-/// Test if this field is marked as valid/changed
-pub unsafe fn pvxs_value_is_marked(this: *const Value, parents: bool, children: bool, pvxs_library: Arc<LoadLib>) -> bool {
-    // Load the symbol for `isMarked`
-    let func: Symbol<unsafe extern "C" fn(*const Value, bool, bool) -> bool> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"?isMarked@Value@pvxs@@QEBA_N_N0@Z"
-        } else if cfg!(target_os = "linux") {
-            b"_ZNK4pvxs5Value8isMarkedEbb"
-        } else {
-            b""
-        })
-        .expect("Function `isMarked` not found");
-    func(this, parents, children)
-}
-
-/// return *this if isMarked()==true, or a !valid() ref. if false.
-pub unsafe fn pvxs_value_if_marked(this: *const Value, parents: bool, children: bool, pvxs_library: Arc<LoadLib>) -> Value {
-    // Load the symbol for `ifMarked`
-    let func: Symbol<unsafe extern "C" fn(*const Value, bool, bool) -> Value> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"?ifMarked@Value@pvxs@@QEBA?AV12@_N0@Z"
-        } else if cfg!(target_os = "linux") {
-            b"_ZNK4pvxs5Value8ifMarkedEbb"
-        } else {
-            b""
-        })
-        .expect("Function `ifMarked` not found");
-    func(this, parents, children)
-}
-
-/// Mark this field as valid/changed
-pub unsafe fn pvxs_value_mark(this: *mut Value, v: bool, pvxs_library: Arc<LoadLib>) {
-    // Load the symbol for `mark`
-    let func: Symbol<unsafe extern "C" fn(*mut Value, bool) -> ()> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"?mark@Value@pvxs@@QEAAX_N@Z"
-        } else if cfg!(target_os = "linux") {
-            b"_ZN4pvxs5Value4markEb"
-        } else {
-            b""
-        })
-        .expect("Function `mark` not found");
-    func(this, v)
-}
-
-/// Remove mark from this field, and optionally parent and/or child fields.
-/// 
-/// since 1.1.3 Correctly unmark parent fields
-pub unsafe fn pvxs_value_unmark(this: *mut Value, parents: bool, children: bool, pvxs_library: Arc<LoadLib>) {
-    // Load the symbol for `unmark`
-    let func: Symbol<unsafe extern "C" fn(*mut Value, bool, bool) -> ()> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"?unmark@Value@pvxs@@QEAAX_N0@Z"
-        } else if cfg!(target_os = "linux") {
-            b"_ZN4pvxs5Value6unmarkEbb"
-        } else {
-            b""
-        })
-        .expect("Function `unmark` not found");
-    func(this, parents, children)
-}
-
-/// Type of the referenced field (or Null)
-pub unsafe fn pvxs_value_type(this: *const Value, pvxs_library: Arc<LoadLib>) -> TypeCode {
-    // Load the symbol for `type`
-    let func: Symbol<unsafe extern "C" fn(*const Value) -> TypeCode> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"?type@Value@pvxs@@QEBA?AUTypeCode@2@XZ"
-        } else if cfg!(target_os = "linux") {
-            b"_ZNK4pvxs5Value4typeEv"
-        } else {
-            b""
-        })
-        .expect("Function `type` not found");
-    func(this)
-}
-
-/// Type of value stored in referenced field
-pub unsafe fn pvxs_value_storage_type(this: *const Value, pvxs_library: Arc<LoadLib>) -> StoreType {
-    // Load the symbol for `storageType`
-    let func: Symbol<unsafe extern "C" fn(*const Value) -> StoreType> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"?storageType@Value@pvxs@@QEBA?AW4StoreType@2@XZ"
-        } else if cfg!(target_os = "linux") {
-            b"_ZNK4pvxs5Value11storageTypeEv"
-        } else {
-            b""
-        })
-        .expect("Function `storageType` not found");
-    func(this)
-}
-
-/// Type ID string (Struct or Union only)
-pub unsafe fn pvxs_value_id(this: *const Value, pvxs_library: Arc<LoadLib>) -> *const StdString {
-    // Load the symbol for `id`
-    let func: Symbol<unsafe extern "C" fn(*const Value) -> *const StdString> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"?id@Value@pvxs@@QEBAAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@XZ"
-        } else if cfg!(target_os = "linux") {
-            b"_ZNK4pvxs5Value2idEv"
-        } else {
-            b""
-        })
-        .expect("Function `id` not found");
-    func(this)
-}
-
-/// Test prefix of Type ID string (Struct or Union only)
-pub unsafe fn pvxs_value_id_starts_with(this: *const Value, prefix: *const StdString, pvxs_library: Arc<LoadLib>) -> bool {
-    // Load the symbol for `idStartsWith`
-    let func: Symbol<unsafe extern "C" fn(*const Value, *const StdString) -> bool> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"?idStartsWith@Value@pvxs@@QEBA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z"
-        } else if cfg!(target_os = "linux") {
-            b"_ZNK4pvxs5Value12idStartsWithERKNS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEE"
-        } else {
-            b""
-        })
-        .expect("Function `idStartsWith` not found");
-    func(this, prefix)
-}
-
-/// Return our name for a descendant field.
-/// 
-/// ```cpp
-/// Value v = ...;
-/// assert(v.nameOf(v[\"some.field\"])==\"some.field\");
-/// 
-/// @throws NoField unless both this and descendant are valid()
-/// @throws std::logic_error if descendant is not actually a descendant
-/// 
-pub unsafe fn pvxs_value_name_of(this: *const Value, descendant: *const Value, pvxs_library: Arc<LoadLib>) -> *const StdString {
-    // Load the symbol for `nameOf`
-    let func: Symbol<unsafe extern "C" fn(*const Value, *const Value) -> *const StdString> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"?nameOf@Value@pvxs@@QEBAAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AEBV12@@Z"
-        } else if cfg!(target_os = "linux") {
-            b"_ZNK4pvxs5Value6nameOfERKS0_"
-        } else {
-            b""
-        })
-        .expect("Function `nameOf` not found");
-    func(this, descendant)
-}
-
-pub unsafe fn pvxs_value_copy_out(
-    this: *const Value,
-    ptr: *mut ::std::os::raw::c_void,
-    type_: StoreType,
-    pvxs_library: Arc<LoadLib>) {
-    // Load the symbol for `tryCopyOut`
-    let func: Symbol<unsafe extern "C" fn(*const Value, *mut ::std::os::raw::c_void, StoreType)> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"?copyOut@Value@pvxs@@QEBAXPEAXW4StoreType@2@@Z"
-        } else if cfg!(target_os = "linux") {
-            b"_ZNK4pvxs5Value9tryCopyOutEPvNS_9StoreTypeE"
-        } else {
-            b""
-        })
-        .expect("Function `tryCopyOut` not found");
-    func(this, ptr, type_)
-}
-
-pub unsafe fn pvxs_value_try_copy_out(
-    this: *const Value,
-    ptr: *mut ::std::os::raw::c_void,
-    type_: StoreType,
-    pvxs_library: Arc<LoadLib>,
-) -> bool {
-    // Load the symbol for `tryCopyOut`
-    let func: Symbol<unsafe extern "C" fn(*const Value, *mut ::std::os::raw::c_void, StoreType) -> bool> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"?tryCopyOut@Value@pvxs@@QEBA_NPEAXW4StoreType@2@@Z"
-        } else if cfg!(target_os = "linux") {
-            b"_ZNK4pvxs5Value9tryCopyOutEPvNS_9StoreTypeE"
-        } else {
-            b""
-        })
-        .expect("Function `tryCopyOut` not found");
-    func(this, ptr, type_)
-}
-
-pub unsafe fn pvxs_value_copy_in(
-    this: *mut Value,
-    ptr: *const ::std::os::raw::c_void,
-    type_: StoreType,
-    pvxs_library: Arc<LoadLib>,
-) {
-    // Load the symbol for `copyIn`
-    let func: Symbol<unsafe extern "C" fn(*mut Value, *const ::std::os::raw::c_void, StoreType) -> ()> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"?copyIn@Value@pvxs@@QEAAXPEBXW4StoreType@2@@Z"
-        } else if cfg!(target_os = "linux") {
-            b"_ZN4pvxs5Value6copyInEPKvNS_9StoreTypeE"
-        } else {
-            b""
-        })
-        .expect("Function `copyIn` not found");
-    func(this, ptr, type_)
-}
-
-pub unsafe fn pvxs_value_try_copy_in(
-    this: *mut Value,
-    ptr: *const ::std::os::raw::c_void,
-    type_: StoreType,
-    pvxs_library: Arc<LoadLib>,
-) -> bool {
-    // Load the symbol for `tryCopyIn`
-    let func: Symbol<unsafe extern "C" fn(*mut Value, *const ::std::os::raw::c_void, StoreType) -> bool> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"?tryCopyIn@Value@pvxs@@QEAA_NPEBXW4StoreType@2@@Z"
-        } else if cfg!(target_os = "linux") {
-            b"_ZN4pvxs5Value8tryCopyInEPKvNS_9StoreTypeE"
-        } else {
-            b""
-        })
-        .expect("Function `tryCopyIn` not found");
-    func(this, ptr, type_)
-}
-
-pub unsafe fn pvxs_value_lookup(this: *mut Value, name: *const StdString, pvxs_library: Arc<LoadLib>) -> Value {
-    // Load the symbol for `lookup`
-    let func: Symbol<unsafe extern "C" fn(*mut Value, *const StdString) -> Value> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"?lookup@Value@pvxs@@QEAA?AV12@AEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z"
-        } else if cfg!(target_os = "linux") {
-            b"_ZN4pvxs5Value6lookupERKNS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEE"
-        } else {
-            b""
-        })
-        .expect("Function `lookup` not found");
-    func(this, name)
-}
-
-pub unsafe fn pvxs_value_lookup1(this: *const Value, name: *const StdString, pvxs_library: Arc<LoadLib>) -> Value {
-    // Load the symbol for `lookup1`
-    let func: Symbol<unsafe extern "C" fn(*const Value, *const StdString) -> Value> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"?lookup@Value@pvxs@@QEBA?BV12@AEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z"
-        } else if cfg!(target_os = "linux") {
-            b"_ZNK4pvxs5Value6lookupERKNS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEE"
-        } else {
-            b""
-        })
-        .expect("Function `lookup1` not found");
-    func(this, name)
-}
-
-/// Number of child fields.
-/// 
-/// Only Struct, StructA, Union, UnionA return non-zero
-/// since 1.1.3 correctly return non-zero for StructA and UnionA
-pub unsafe fn pvxs_value_nmembers(this: *const Value, pvxs_library: Arc<LoadLib>) -> usize {
-    // Load the symbol for `nmembers`
-    let func: Symbol<unsafe extern "C" fn(*const Value) -> usize> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"?nmembers@Value@pvxs@@QEBA_KXZ"
-        } else if cfg!(target_os = "linux") {
-            b"_ZNK4pvxs5Value8nmembersEv"
-        } else {
-            b""
-        })
-        .expect("Function `nmembers` not found");
-    func(this)
-}
-
-pub unsafe fn pvxs_value_destructor(this: *mut Value, pvxs_library: Arc<LoadLib>) {
-    // Load the symbol for `Value_destructor`
-    let func: Symbol<unsafe extern "C" fn(*mut Value) -> ()> = 
-        pvxs_library.lib
-        .get(if cfg!(target_os = "windows") {
-            b"??1Value@pvxs@@QEAA@XZ"
-        } else if cfg!(target_os = "linux") {
-            b"_ZN4pvxs5ValueD1Ev"
-        } else {
-            b""
-        })
-        .expect("Function `Value_destructor` not found");
-    func(this)
+#[derive(Debug, Clone)]
+pub(crate) enum FieldValue {
+    Double(f64),
+    Int32(i32),
+    Int64(i64),
+    Bool(bool),
+    String(String),
+    Enum(i16),
+    DoubleArray(Vec<f64>),
+    Int32Array(Vec<i32>),
+    StringArray(Vec<String>),
 }
 
 impl Value {
-    pub unsafe fn clone_empty(&self, pvxs_library: Arc<LoadLib>) -> Value {
-        pvxs_value_clone_empty(self, pvxs_library)
+    /// Create an empty Value.
+    pub fn new() -> Self {
+        Self::default()
     }
-    pub unsafe fn clone(&self, pvxs_library: Arc<LoadLib>) -> Value {
-        pvxs_value_clone(self, pvxs_library)
+
+    /// Check if this value is valid (non-empty).
+    pub fn is_valid(&self) -> bool {
+        !self.fields.is_empty()
     }
-    pub unsafe fn assign(&mut self, o: *const Value, pvxs_library: Arc<LoadLib>) -> *mut Value {
-        pvxs_value_assign(self, o, pvxs_library)
+
+    // ── setters (pub(crate) — used by the client/server impls) ──────────────
+
+    pub(crate) fn set_field_double(&mut self, field: &str, v: f64) {
+        self.fields.insert(field.to_string(), FieldValue::Double(v));
     }
-    pub unsafe fn alloc_member(&mut self, pvxs_library: Arc<LoadLib>) -> Value {
-        pvxs_value_alloc_member(self, pvxs_library)
+
+    pub(crate) fn set_field_int32(&mut self, field: &str, v: i32) {
+        self.fields.insert(field.to_string(), FieldValue::Int32(v));
     }
-    pub unsafe fn clear(&mut self, pvxs_library: Arc<LoadLib>) {
-        pvxs_value_clear(self, pvxs_library)
+
+    pub(crate) fn set_field_string(&mut self, field: &str, v: String) {
+        self.fields.insert(field.to_string(), FieldValue::String(v));
     }
-    pub unsafe fn is_marked(&self, parents: bool, children: bool, pvxs_library: Arc<LoadLib>) -> bool {
-        pvxs_value_is_marked(self, parents, children, pvxs_library)
+
+    pub(crate) fn set_field_enum(&mut self, field: &str, v: i16) {
+        self.fields.insert(field.to_string(), FieldValue::Enum(v));
     }
-    pub unsafe fn if_marked(&self, parents: bool, children: bool, pvxs_library: Arc<LoadLib>) -> Value {
-        pvxs_value_if_marked(self, parents, children, pvxs_library)
+
+    pub(crate) fn set_field_double_array(&mut self, field: &str, v: Vec<f64>) {
+        self.fields
+            .insert(field.to_string(), FieldValue::DoubleArray(v));
     }
-    pub unsafe fn mark(&mut self, v: bool, pvxs_library: Arc<LoadLib>) {
-        pvxs_value_mark(self, v, pvxs_library)
+
+    pub(crate) fn set_field_int32_array(&mut self, field: &str, v: Vec<i32>) {
+        self.fields
+            .insert(field.to_string(), FieldValue::Int32Array(v));
     }
-    pub unsafe fn unmark(&mut self, parents: bool, children: bool, pvxs_library: Arc<LoadLib>) {
-        pvxs_value_unmark(self, parents, children, pvxs_library)
+
+    pub(crate) fn set_field_string_array(&mut self, field: &str, v: Vec<String>) {
+        self.fields
+            .insert(field.to_string(), FieldValue::StringArray(v));
     }
-    pub unsafe fn type_(&self, pvxs_library: Arc<LoadLib>) -> TypeCode {
-        pvxs_value_type(self, pvxs_library)
+
+    // ── getters ──────────────────────────────────────────────────────────────
+
+    /// Get a field value as a double.
+    pub fn get_field_double(&self, field_name: &str) -> crate::Result<f64> {
+        match self.fields.get(field_name) {
+            Some(FieldValue::Double(v)) => Ok(*v),
+            Some(FieldValue::Int32(v)) => Ok(*v as f64),
+            Some(FieldValue::Enum(v)) => Ok(*v as f64),
+            Some(_) => Err(crate::PvxsError::new(format!(
+                "field '{}' is not a double",
+                field_name
+            ))),
+            None => Err(crate::PvxsError::new(format!(
+                "field '{}' not found",
+                field_name
+            ))),
+        }
     }
-    pub unsafe fn storage_type(&self, pvxs_library: Arc<LoadLib>) -> StoreType {
-        pvxs_value_storage_type(self, pvxs_library)
+
+    /// Get a field value as an i32.
+    pub fn get_field_int32(&self, field_name: &str) -> crate::Result<i32> {
+        match self.fields.get(field_name) {
+            Some(FieldValue::Int32(v)) => Ok(*v),
+            Some(FieldValue::Double(v)) => Ok(*v as i32),
+            Some(FieldValue::Enum(v)) => Ok(*v as i32),
+            Some(_) => Err(crate::PvxsError::new(format!(
+                "field '{}' is not an int32",
+                field_name
+            ))),
+            None => Err(crate::PvxsError::new(format!(
+                "field '{}' not found",
+                field_name
+            ))),
+        }
     }
-    pub unsafe fn id(&self, pvxs_library: Arc<LoadLib>) -> *const StdString {
-        pvxs_value_id(self, pvxs_library)
+
+    /// Get a field value as a String.
+    pub fn get_field_string(&self, field_name: &str) -> crate::Result<String> {
+        match self.fields.get(field_name) {
+            Some(FieldValue::String(v)) => Ok(v.clone()),
+            Some(FieldValue::Double(v)) => Ok(v.to_string()),
+            Some(FieldValue::Int32(v)) => Ok(v.to_string()),
+            Some(FieldValue::Enum(v)) => Ok(v.to_string()),
+            Some(_) => Err(crate::PvxsError::new(format!(
+                "field '{}' is not a string",
+                field_name
+            ))),
+            None => Err(crate::PvxsError::new(format!(
+                "field '{}' not found",
+                field_name
+            ))),
+        }
     }
-    pub unsafe fn id_starts_with(&self, prefix: *const StdString, pvxs_library: Arc<LoadLib>) -> bool {
-        pvxs_value_id_starts_with(self, prefix, pvxs_library)
+
+    /// Get a field value as an enum index (i16).
+    pub fn get_field_enum(&self, field_name: &str) -> crate::Result<i16> {
+        match self.fields.get(field_name) {
+            Some(FieldValue::Enum(v)) => Ok(*v),
+            Some(FieldValue::Int32(v)) => Ok(*v as i16),
+            Some(_) => Err(crate::PvxsError::new(format!(
+                "field '{}' is not an enum",
+                field_name
+            ))),
+            None => Err(crate::PvxsError::new(format!(
+                "field '{}' not found",
+                field_name
+            ))),
+        }
     }
-    pub unsafe fn name_of(&self, descendant: *const Value, pvxs_library: Arc<LoadLib>) -> *const StdString {
-        pvxs_value_name_of(self, descendant, pvxs_library)
+
+    /// Get a field value as an array of doubles.
+    pub fn get_field_double_array(&self, field_name: &str) -> crate::Result<Vec<f64>> {
+        match self.fields.get(field_name) {
+            Some(FieldValue::DoubleArray(v)) => Ok(v.clone()),
+            Some(_) => Err(crate::PvxsError::new(format!(
+                "field '{}' is not a double array",
+                field_name
+            ))),
+            None => Err(crate::PvxsError::new(format!(
+                "field '{}' not found",
+                field_name
+            ))),
+        }
     }
-    pub unsafe fn copy_out(&self, ptr: *mut ::std::os::raw::c_void, type_: StoreType, pvxs_library: Arc<LoadLib>) {
-        pvxs_value_copy_out(self, ptr, type_, pvxs_library)
+
+    /// Get a field value as an array of i32.
+    pub fn get_field_int32_array(&self, field_name: &str) -> crate::Result<Vec<i32>> {
+        match self.fields.get(field_name) {
+            Some(FieldValue::Int32Array(v)) => Ok(v.clone()),
+            Some(_) => Err(crate::PvxsError::new(format!(
+                "field '{}' is not an int32 array",
+                field_name
+            ))),
+            None => Err(crate::PvxsError::new(format!(
+                "field '{}' not found",
+                field_name
+            ))),
+        }
     }
-    pub unsafe fn try_copy_out(
-        &self,
-        ptr: *mut ::std::os::raw::c_void,
-        type_: StoreType,
-        pvxs_library: Arc<LoadLib>,
-    ) -> bool {
-        pvxs_value_try_copy_out(self, ptr, type_, pvxs_library)
+
+    /// Get a field value as an array of strings.
+    pub fn get_field_string_array(&self, field_name: &str) -> crate::Result<Vec<String>> {
+        match self.fields.get(field_name) {
+            Some(FieldValue::StringArray(v)) => Ok(v.clone()),
+            Some(_) => Err(crate::PvxsError::new(format!(
+                "field '{}' is not a string array",
+                field_name
+            ))),
+            None => Err(crate::PvxsError::new(format!(
+                "field '{}' not found",
+                field_name
+            ))),
+        }
     }
-    pub unsafe fn copy_in(&mut self, ptr: *const ::std::os::raw::c_void, type_: StoreType, pvxs_library: Arc<LoadLib>) {
-        pvxs_value_copy_in(self, ptr, type_, pvxs_library)
+
+    // ── bool ─────────────────────────────────────────────────────────────
+
+    pub(crate) fn set_field_bool(&mut self, field: &str, v: bool) {
+        self.fields.insert(field.to_string(), FieldValue::Bool(v));
     }
-    pub unsafe fn try_copy_in(
-        &mut self,
-        ptr: *const ::std::os::raw::c_void,
-        type_: StoreType,
-        pvxs_library: Arc<LoadLib>,
-    ) -> bool {
-        pvxs_value_try_copy_in(self, ptr, type_, pvxs_library)
+
+    pub fn get_field_bool(&self, field_name: &str) -> crate::Result<bool> {
+        match self.fields.get(field_name) {
+            Some(FieldValue::Bool(v)) => Ok(*v),
+            Some(FieldValue::Int32(v)) => Ok(*v != 0),
+            Some(FieldValue::Int64(v)) => Ok(*v != 0),
+            Some(_) => Err(crate::PvxsError::new(format!(
+                "field '{}' is not a bool",
+                field_name
+            ))),
+            None => Err(crate::PvxsError::new(format!(
+                "field '{}' not found",
+                field_name
+            ))),
+        }
     }
-    pub unsafe fn lookup(&mut self, name: *const StdString, pvxs_library: Arc<LoadLib>) -> Value {
-        pvxs_value_lookup(self, name, pvxs_library)
+
+    // ── i64 ──────────────────────────────────────────────────────────────
+
+    pub(crate) fn set_field_int64(&mut self, field: &str, v: i64) {
+        self.fields.insert(field.to_string(), FieldValue::Int64(v));
     }
-    pub unsafe fn lookup1(&self, name: *const StdString, pvxs_library: Arc<LoadLib>) -> Value {
-        pvxs_value_lookup1(self, name, pvxs_library)
+
+    pub fn get_field_int64(&self, field_name: &str) -> crate::Result<i64> {
+        match self.fields.get(field_name) {
+            Some(FieldValue::Int64(v)) => Ok(*v),
+            Some(FieldValue::Int32(v)) => Ok(*v as i64),
+            Some(FieldValue::Double(v)) => Ok(*v as i64),
+            Some(_) => Err(crate::PvxsError::new(format!(
+                "field '{}' is not an int64",
+                field_name
+            ))),
+            None => Err(crate::PvxsError::new(format!(
+                "field '{}' not found",
+                field_name
+            ))),
+        }
     }
-    pub unsafe fn nmembers(&self, pvxs_library: Arc<LoadLib>) -> usize {
-        pvxs_value_nmembers(self, pvxs_library)
+
+    // ── introspection ─────────────────────────────────────────────────────
+
+    /// Return the names of all fields currently set in this value.
+    pub fn field_names(&self) -> Vec<String> {
+        let mut names: Vec<_> = self.fields.keys().cloned().collect();
+        names.sort();
+        names
     }
-    pub unsafe fn destruct(&mut self, pvxs_library: Arc<LoadLib>) {
-        pvxs_value_destructor(self, pvxs_library)
+
+    /// Return the [`FieldType`] of a field, or `None` if the field is not set.
+    pub fn type_of(&self, field_name: &str) -> Option<FieldType> {
+        self.fields.get(field_name).map(|v| match v {
+            FieldValue::Double(_) => FieldType::Double,
+            FieldValue::Int32(_) => FieldType::Int32,
+            FieldValue::Int64(_) => FieldType::Int64,
+            FieldValue::Bool(_) => FieldType::Bool,
+            FieldValue::String(_) => FieldType::String,
+            FieldValue::Enum(_) => FieldType::Enum,
+            FieldValue::DoubleArray(_) => FieldType::DoubleArray,
+            FieldValue::Int32Array(_) => FieldType::Int32Array,
+            FieldValue::StringArray(_) => FieldType::StringArray,
+        })
+    }
+
+    // ── display.* convenience setters/getters ────────────────────────────
+
+    pub fn set_display_limit_low(&mut self, v: i64) {
+        self.set_field_int64("display.limitLow", v);
+    }
+    pub fn get_display_limit_low(&self) -> crate::Result<i64> {
+        self.get_field_int64("display.limitLow")
+    }
+
+    pub fn set_display_limit_high(&mut self, v: i64) {
+        self.set_field_int64("display.limitHigh", v);
+    }
+    pub fn get_display_limit_high(&self) -> crate::Result<i64> {
+        self.get_field_int64("display.limitHigh")
+    }
+
+    pub fn set_display_units(&mut self, v: impl Into<String>) {
+        self.set_field_string("display.units", v.into());
+    }
+    pub fn get_display_units(&self) -> crate::Result<String> {
+        self.get_field_string("display.units")
+    }
+
+    pub fn set_display_precision(&mut self, v: i32) {
+        self.set_field_int32("display.precision", v);
+    }
+    pub fn get_display_precision(&self) -> crate::Result<i32> {
+        self.get_field_int32("display.precision")
+    }
+
+    pub fn set_display_description(&mut self, v: impl Into<String>) {
+        self.set_field_string("display.description", v.into());
+    }
+    pub fn get_display_description(&self) -> crate::Result<String> {
+        self.get_field_string("display.description")
+    }
+
+    // ── timeStamp.* convenience setters/getters ──────────────────────────
+
+    pub fn set_timestamp_seconds(&mut self, v: i64) {
+        self.set_field_int64("timeStamp.secondsPastEpoch", v);
+    }
+    pub fn get_timestamp_seconds(&self) -> crate::Result<i64> {
+        self.get_field_int64("timeStamp.secondsPastEpoch")
+    }
+
+    pub fn set_timestamp_nanos(&mut self, v: i32) {
+        self.set_field_int32("timeStamp.nanoseconds", v);
+    }
+    pub fn get_timestamp_nanos(&self) -> crate::Result<i32> {
+        self.get_field_int32("timeStamp.nanoseconds")
     }
 }
 
-#[repr(C)]
-#[derive(Debug)]
-pub struct ValueIterator<T> {
-    pub _phantom_0: ::std::marker::PhantomData<::std::cell::UnsafeCell<T>>,
-    pub _base: T,
-    pub val: Value,
-    pub pos: usize,
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut pairs: Vec<_> = self.fields.iter().collect();
+        pairs.sort_by_key(|(k, _)| k.as_str());
+        write!(f, "{{")? ;
+        for (i, (k, v)) in pairs.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?
+            }
+            match v {
+                FieldValue::Double(x) => write!(f, "{k}: {x}")?,
+                FieldValue::Int32(x) => write!(f, "{k}: {x}")?,
+                FieldValue::Int64(x) => write!(f, "{k}: {x}i64")?,
+                FieldValue::Bool(x) => write!(f, "{k}: {x}")?,
+                FieldValue::String(x) => write!(f, "{k}: \"{x}\"")?,
+                FieldValue::Enum(x) => write!(f, "{k}: enum({x})")?,
+                FieldValue::DoubleArray(x) => write!(f, "{k}: {x:?}")?,
+                FieldValue::Int32Array(x) => write!(f, "{k}: {x:?}")?,
+                FieldValue::StringArray(x) => write!(f, "{k}: {x:?}")?,
+            }
+        }
+        write!(f, "}}")
+    }
 }
-#[repr(C)]
-#[derive(Debug)]
-pub struct ValueIterable {
-    pub val: Value,
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scalar_round_trips() {
+        let mut v = Value::new();
+        v.set_field_double("d", 1.5);
+        v.set_field_int32("i", -7);
+        v.set_field_string("s", "hi".to_string());
+        v.set_field_enum("e", 3);
+        v.set_field_bool("b", true);
+        v.set_field_int64("l", i64::MAX);
+
+        assert!((v.get_field_double("d").unwrap() - 1.5).abs() < 1e-12);
+        assert_eq!(v.get_field_int32("i").unwrap(), -7);
+        assert_eq!(v.get_field_string("s").unwrap(), "hi");
+        assert_eq!(v.get_field_enum("e").unwrap(), 3);
+        assert!(v.get_field_bool("b").unwrap());
+        assert_eq!(v.get_field_int64("l").unwrap(), i64::MAX);
+    }
+
+    #[test]
+    fn array_round_trips() {
+        let mut v = Value::new();
+        v.set_field_double_array("da", vec![1.0, 2.0]);
+        v.set_field_int32_array("ia", vec![10, 20]);
+        v.set_field_string_array("sa", vec!["a".to_string(), "b".to_string()]);
+
+        assert_eq!(v.get_field_double_array("da").unwrap(), vec![1.0, 2.0]);
+        assert_eq!(v.get_field_int32_array("ia").unwrap(), vec![10, 20]);
+        assert_eq!(
+            v.get_field_string_array("sa").unwrap(),
+            vec!["a".to_string(), "b".to_string()]
+        );
+    }
+
+    #[test]
+    fn is_valid() {
+        let mut v = Value::new();
+        assert!(!v.is_valid());
+        v.set_field_double("x", 0.0);
+        assert!(v.is_valid());
+    }
+
+    #[test]
+    fn field_names_sorted() {
+        let mut v = Value::new();
+        v.set_field_double("z", 1.0);
+        v.set_field_double("a", 2.0);
+        v.set_field_double("m", 3.0);
+        assert_eq!(v.field_names(), vec!["a", "m", "z"]);
+    }
+
+    #[test]
+    fn type_of_correct() {
+        let mut v = Value::new();
+        v.set_field_double("d", 0.0);
+        v.set_field_int32("i", 0);
+        v.set_field_bool("b", false);
+        assert_eq!(v.type_of("d"), Some(FieldType::Double));
+        assert_eq!(v.type_of("i"), Some(FieldType::Int32));
+        assert_eq!(v.type_of("b"), Some(FieldType::Bool));
+        assert_eq!(v.type_of("missing"), None);
+    }
+
+    #[test]
+    fn display_timestamp_helpers() {
+        let mut v = Value::new();
+        v.set_display_limit_low(-100);
+        v.set_display_limit_high(100);
+        v.set_display_units("mm");
+        v.set_display_precision(3);
+        v.set_display_description("position");
+        v.set_timestamp_seconds(1_000_000_000);
+        v.set_timestamp_nanos(500_000_000);
+
+        assert_eq!(v.get_display_limit_low().unwrap(), -100);
+        assert_eq!(v.get_display_limit_high().unwrap(), 100);
+        assert_eq!(v.get_display_units().unwrap(), "mm");
+        assert_eq!(v.get_display_precision().unwrap(), 3);
+        assert_eq!(v.get_display_description().unwrap(), "position");
+        assert_eq!(v.get_timestamp_seconds().unwrap(), 1_000_000_000);
+        assert_eq!(v.get_timestamp_nanos().unwrap(), 500_000_000);
+    }
+
+    #[test]
+    fn missing_field_errors() {
+        let v = Value::new();
+        assert!(v.get_field_double("x").is_err());
+        assert!(v.get_field_int32("x").is_err());
+        assert!(v.get_field_string("x").is_err());
+    }
+
+    #[test]
+    fn type_mismatch_errors() {
+        let mut v = Value::new();
+        v.set_field_double_array("da", vec![1.0, 2.0]);
+        // Scalar string accessor on an array field should error
+        assert!(v.get_field_string("da").is_err());
+        // Bool accessor on a double-array field should error
+        assert!(v.get_field_bool("da").is_err());
+    }
 }
-pub type ValueIterableIterator<T> = ValueIterator<T>;

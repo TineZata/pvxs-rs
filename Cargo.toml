@@ -2,14 +2,27 @@
 name = "pvxs"
 version = "0.1.0"
 edition = "2021"
-description = "PVXS Rust library"
-# license = ""
+description = "Pure-Rust pvAccess implementation with the same public API as pvxs-sys — no C++ toolchain, no EPICS_BASE, no DLLs."
+license = "MPL-2.0"
 # repository = ""
 
 [dependencies]
-# For dynamic loading of shared libraries (e.g., pvxs.dll)
-libloading = "0.8.6"
+crossbeam-channel = "0.5"
+bytes = "1"
+
+# Core: EPICS libCom for Rust — runtime (task spawn/sleep/interval) and
+# net (per-NIC async UDP, interface enumeration, loopback multicast).
+# Used unconditionally; epics-libcom-rs also brings tokio transitively.
+# Pinned to git until the crate is published to crates.io.
+epics-libcom-rs = { git = "https://github.com/epics-rs/epics-rs", package = "epics-libcom-rs" }
+
+[features]
+# Enable the pvAccess network transport (TCP server + client).
+# Gated because the codec is not yet implemented — see TODO.md.
+network = []
 
 [dev-dependencies]
-# For testing
-assert_matches = "1.5.0"  # Optional: for ergonomic test assertions
+# tokio comes in transitively through epics-libcom-rs; list it here
+# explicitly only for test macros (#[tokio::test]).
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
