@@ -10,19 +10,18 @@ license = "MPL-2.0"
 crossbeam-channel = "0.5"
 bytes = "1"
 
+# Async runtime + TCP/UDP I/O for the pvAccess transport layer.
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time"] }
+
 # Core: EPICS libCom for Rust — runtime (task spawn/sleep/interval) and
 # net (per-NIC async UDP, interface enumeration, loopback multicast).
-# Used unconditionally; epics-libcom-rs also brings tokio transitively.
 # Pinned to git until the crate is published to crates.io.
 epics-libcom-rs = { git = "https://github.com/epics-rs/epics-rs", package = "epics-libcom-rs" }
 
 [features]
-# Enable the pvAccess network transport (TCP server + client).
-# Gated because the codec is not yet implemented — see TODO.md.
 network = []
 
 [dev-dependencies]
-# tokio comes in transitively through epics-libcom-rs; list it here
-# explicitly only for test macros (#[tokio::test]).
+# Bring in #[tokio::test] macro for async integration tests.
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 

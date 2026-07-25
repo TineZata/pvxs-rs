@@ -39,6 +39,10 @@ pub mod metadata;
 pub mod server;
 pub mod value;
 
+pub(crate) mod proto;
+pub(crate) mod pvdata;
+pub(crate) mod net;
+
 use std::fmt;
 
 pub use alarms::{compute_alarm_for_scalar, AlarmConfig, AlarmResult, AlarmSeverity, AlarmStatus};
