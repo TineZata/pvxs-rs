@@ -1,29 +1,27 @@
-﻿[package]
+[package]
 name = "pvxs"
-version = "0.2.0"
+version = "0.1.0"
 edition = "2021"
-description = "High-level Rust bindings for EPICS PVXS (PVAccess) with separate Client and Server APIs"
-license = "MIT"
-repository = "https://github.com/TineZata/pvxs-rs"
+description = "Pure-Rust pvAccess implementation with the same public API as pvxs-sys — no C++ toolchain, no EPICS_BASE, no DLLs."
+license = "MPL-2.0"
+# repository = ""
 
 [dependencies]
-epics-pvxs-sys = { path = "../epics-pvxs-sys", default-features = false }
-thiserror = "2.0.17"
-serde = { version = "1.0", features = ["derive"], optional = true }
-tokio = { version = "1.0", features = ["full"], optional = true }
-tracing = "0.1.43"
-futures = { version = "0.3", optional = true }
-chrono = "0.4.42"
+crossbeam-channel = "0.5"
+bytes = "1"
 
-[dev-dependencies]
-tokio-test = "0.4"
-env_logger = "0.11.7"
-fastrand = "2.3.0"
+# Async runtime + TCP/UDP I/O for the pvAccess transport layer.
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time"] }
+
+# Core: EPICS libCom for Rust — runtime (task spawn/sleep/interval) and
+# net (per-NIC async UDP, interface enumeration, loopback multicast).
+# Pinned to git until the crate is published to crates.io.
+epics-libcom-rs = { git = "https://github.com/epics-rs/epics-rs", package = "epics-libcom-rs" }
 
 [features]
-default = ["client", "server"]
-client = []
-server = []
-async = ["tokio", "futures", "epics-pvxs-sys/async"]
-serde = ["dep:serde"]
-full = ["client", "server", "async", "serde"]
+network = []
+
+[dev-dependencies]
+# Bring in #[tokio::test] macro for async integration tests.
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+

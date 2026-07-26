@@ -1,538 +1,768 @@
-//! Server API for providing EPICS PVs
+// Copyright 2026 Tine Zata
+// SPDX-License-Identifier: MPL-2.0
+//! Pure-Rust pvAccess server — same public API as `pvxs-sys::Server`.
 //!
-//! This module provides a high-level server interface for creating EPICS
-//! servers that can provide Process Variables to clients.
-//!
-//! # Design Philosophy
-//!
-//! This API improves upon the low-level -sys bindings by providing:
-//! - **Builder pattern** for configuring PVs with sensible defaults
-//! - **Type-safe APIs** for different PV types
-//! - **Simplified metadata** - optional, with defaults
-//! - **Better ergonomics** - chainable methods, clear intent
+//! All state is held in a worker thread via crossbeam channels.
+//! The pvAccess TCP/UDP transport is a TODO — see TODO.md.
 
-pub mod doublepvbuilder;
-pub mod int32pvbuilder;
-pub mod stringpvbuilder;
-pub mod pv;
+use crossbeam_channel as channel;
+use std::thread;
 
-use crate::error::{Error, Result};
-use doublepvbuilder::DoublePvBuilder;
-use int32pvbuilder::Int32PvBuilder;
-use stringpvbuilder::StringPvBuilder;
-use pv::Pv;
-use epics_pvxs_sys::{NTScalarMetadataBuilder, Server as PvxsServer};
-use tracing::{debug, info};
-use std::collections::HashSet;
+use crate::{AlarmMetadata, AlarmSeverity, AlarmStatus,
+    ControlMetadata, DisplayMetadata, PvxsError, Result,
+};
+pub(crate) mod ntscalar;
+pub(crate) mod ntenum;
+pub (crate) mod manager;
 
-/// High-level PVXS server for providing EPICS PVs
-pub struct Server {
-    inner: PvxsServer,
-    pv_names: HashSet<String>,
+pub use self::ntscalar::NTScalarMetadataBuilder;
+pub use self::ntenum::NTEnumMetadataBuilder;
+pub use self::manager::{ManagerCommand, run_worker};
+
+// ============================================================================
+// Fetched value types (mirror pvxs-sys exactly)
+// ============================================================================
+
+#[derive(Debug, Clone)]
+pub struct FetchedDouble {
+    pub value: f64,
+    pub alarm_severity: AlarmSeverity,
+    pub alarm_status: AlarmStatus,
+    pub alarm_message: String,
+    pub display_metadata: Option<DisplayMetadata>,
+    pub control_metadata: Option<ControlMetadata>,
+    pub alarm_metadata: Option<AlarmMetadata>,
 }
 
-impl Server {
-    /// Create a new PVXS server from environment configuration
-    ///
-    /// This will read EPICS environment variables to configure the server.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use pvxs::Server;
-    ///
-    /// let mut server = Server::new()?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn new() -> Result<Self> {
-        debug!("Creating new PVXS server from environment");
-        
-        let inner = PvxsServer::from_env()
-            .map_err(|e| Error::ServerConfig {
-                message: format!("Failed to create PVXS server: {}", e),
-            })?;
-        
-        info!("PVXS server created successfully");
-        Ok(Self { 
-            inner,
-            pv_names: HashSet::new(),
-        })
-    }
+#[derive(Debug, Clone)]
+pub struct FetchedInt32 {
+    pub value: i32,
+    pub alarm_severity: AlarmSeverity,
+    pub alarm_status: AlarmStatus,
+    pub alarm_message: String,
+    pub display_metadata: Option<DisplayMetadata>,
+    pub control_metadata: Option<ControlMetadata>,
+    pub alarm_metadata: Option<AlarmMetadata>,
+}
 
-    /// Create a new isolated PVXS server
-    ///
-    /// An isolated server uses a random port and doesn't interact with
-    /// normal EPICS network discovery. Useful for testing.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use pvxs::Server;
-    ///
-    /// let mut server = Server::new_isolated()?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn new_isolated() -> Result<Self> {
-        debug!("Creating new isolated PVXS server");
-        
-        let inner = PvxsServer::create_isolated()
-            .map_err(|e| Error::ServerConfig {
-                message: format!("Failed to create isolated PVXS server: {}", e),
-            })?;
-        
-        info!("Isolated PVXS server created successfully");
-        Ok(Self { 
-            inner,
-            pv_names: HashSet::new(),
-        })
-    }
+#[derive(Debug, Clone)]
+pub struct FetchedString {
+    pub value: String,
+    pub alarm_severity: AlarmSeverity,
+    pub alarm_status: AlarmStatus,
+    pub alarm_message: String,
+}
 
-    /// Create and add a new double PV to the server
-    ///
-    /// # Arguments
-    ///
-    /// * `pv_name` - Name of the Process Variable
-    /// * `initial_value` - Initial value for the PV
-    /// * `metadata` - Metadata for the scalar PV
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Pv` handle that can be used to update the PV value.
-    /// If a PV with this name already exists, returns a handle to the existing PV.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use pvxs::Server;
-    ///
-    /// let mut server = Server::new()?;
-    /// let mut pv = server.add_double_pv("test:voltage", 3.3)?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn add_double_pv(&mut self, pv_name: &str, initial_value: f64, metadata: NTScalarMetadataBuilder) -> Result<Pv> {
-        // Check if PV already exists
-        if self.pv_names.contains(pv_name) {
-            return Err(Error::ServerConfig {
-                message: format!("PV '{}' already exists on this server", pv_name),
-            });
-        }
+#[derive(Debug, Clone)]
+pub struct FetchedDoubleArray {
+    pub value: Vec<f64>,
+    pub alarm_severity: AlarmSeverity,
+    pub alarm_status: AlarmStatus,
+    pub alarm_message: String,
+    pub display_metadata: Option<DisplayMetadata>,
+    pub control_metadata: Option<ControlMetadata>,
+    pub alarm_metadata: Option<AlarmMetadata>,
+}
 
-        debug!("Adding double PV: {} with value: {}", pv_name, initial_value);
-        
-        let shared_pv = self.inner.create_pv_double(pv_name, initial_value, metadata)
-            .map_err(|e| Error::ServerConfig {
-                message: format!("Failed to create double PV: {}", e),
-            })?;
-        
-        self.pv_names.insert(pv_name.to_string());
-        
-        info!("Added double PV: {}", pv_name);
-        Ok(Pv {
-            inner: shared_pv,
-            name: pv_name.to_string(),
-        })
-    }
+#[derive(Debug, Clone)]
+pub struct FetchedInt32Array {
+    pub value: Vec<i32>,
+    pub alarm_severity: AlarmSeverity,
+    pub alarm_status: AlarmStatus,
+    pub alarm_message: String,
+    pub display_metadata: Option<DisplayMetadata>,
+    pub control_metadata: Option<ControlMetadata>,
+    pub alarm_metadata: Option<AlarmMetadata>,
+}
 
-    /// Create and add a new double PV with metadata to the server
-    /// 
-    /// # Arguments
-    /// * `pv_name` - Name of the Process Variable
-    /// * `initial_value` - Initial value for the PV
-    /// * `metadata` - Metadata for the scalar PV
-    /// # Returns
-    /// 
-    /// Returns a `Pv` handle that can be used to update the PV value.
-    /// If a PV with this name already exists, returns an error.
-    /// # Example
-    /// ```rust,no_run
-    /// use pvxs::Server;
-    /// use epics_pvxs_sys::NTScalarMetadataBuilder;
-    /// 
-    /// let metadata = NTScalarMetadataBuilder::default();
-    /// let mut server = Server::new()?;
-    /// let mut pv = server.add_double_pv_with_metadata("test:temperature",
-    ///   25.0, metadata)?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    /// 
-    pub fn add_double_pv_with_metadata(&mut self, pv_name: &str, initial_value: f64, metadata: NTScalarMetadataBuilder) -> Result<Pv> {
-        // Check if PV already exists
-        if self.pv_names.contains(pv_name) {
-            return Err(Error::ServerConfig {
-                message: format!("PV '{}' already exists on this server", pv_name),
-            });
-        }
+#[derive(Debug, Clone)]
+pub struct FetchedStringArray {
+    pub value: Vec<String>,
+    pub alarm_severity: AlarmSeverity,
+    pub alarm_status: AlarmStatus,
+    pub alarm_message: String,
+}
 
-        debug!("Adding double PV with metadata: {} with value: {}", pv_name, initial_value);
-        
-        let shared_pv = self.inner
-            .create_pv_double(pv_name, initial_value, metadata)
-            .map_err(|e| Error::ServerConfig {
-                message: format!("Failed to create double PV with metadata: {}", e),
-            })?;
-        
-        self.pv_names.insert(pv_name.to_string());
-        
-        info!("Added double PV with metadata: {}", pv_name);
-        Ok(Pv {
-            inner: shared_pv,
-            name: pv_name.to_string(),
-        })
-    }
+#[derive(Debug, Clone)]
+pub struct FetchedEnum {
+    pub value: i16,
+    pub value_choices: Vec<String>,
+    pub alarm_severity: AlarmSeverity,
+    pub alarm_status: AlarmStatus,
+    pub alarm_message: String,
+}
 
-    /// Create and add a new int32 PV to the server
-    ///
-    /// # Arguments
-    ///
-    /// * `pv_name` - Name of the Process Variable
-    /// * `initial_value` - Initial value for the PV
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Pv` handle that can be used to update the PV value.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use pvxs::Server;
-    ///
-    /// let mut server = Server::new()?;
-    /// let mut pv = server.add_int32_pv("test:counter", 0)?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn add_int32_pv(&mut self, pv_name: &str, initial_value: i32) -> Result<Pv> {
-        // Check if PV already exists
-        if self.pv_names.contains(pv_name) {
-            return Err(Error::ServerConfig {
-                message: format!("PV '{}' already exists on this server", pv_name),
-            });
-        }
+// ============================================================================
+// ServerHandle
+// ============================================================================
 
-        debug!("Adding int32 PV: {} with value: {}", pv_name, initial_value);
-        
-        let shared_pv = self.inner
-            .create_pv_int32(pv_name, initial_value, NTScalarMetadataBuilder::default())
-            .map_err(|e| Error::ServerConfig {
-                message: format!("Failed to create int32 PV: {}", e),
-            })?;
-        
-        self.pv_names.insert(pv_name.to_string());
-        
-        info!("Added int32 PV: {}", pv_name);
-        Ok(Pv {
-            inner: shared_pv,
-            name: pv_name.to_string(),
-        })
-    }
+/// Clone-able, thread-safe handle to a running server.
+///
+/// Mirrors `pvxs-sys::ServerHandle` exactly.
+#[derive(Clone)]
+pub struct ServerHandle {
+    tx: channel::Sender<ManagerCommand>,
+    /// TODO(network): will be the real TCP port once the transport layer lands.
+    tcp_port: u16,
+    /// TODO(network): will be the real UDP port once the transport layer lands.
+    udp_port: u16,
+}
 
-    /// Create and add a new string PV to the server
-    ///
-    /// # Arguments
-    ///
-    /// * `pv_name` - Name of the Process Variable
-    /// * `initial_value` - Initial value for the PV
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Pv` handle that can be used to update the PV value.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use pvxs::Server;
-    ///
-    /// let mut server = Server::new()?;
-    /// let mut pv = server.add_string_pv("test:status", "IDLE")?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn add_string_pv(&mut self, pv_name: &str, initial_value: &str) -> Result<Pv> {
-        // Check if PV already exists
-        if self.pv_names.contains(pv_name) {
-            return Err(Error::ServerConfig {
-                message: format!("PV '{}' already exists on this server", pv_name),
-            });
-        }
-
-        debug!("Adding string PV: {} with value: {}", pv_name, initial_value);
-        
-        let shared_pv = self.inner
-            .create_pv_string(pv_name, initial_value, NTScalarMetadataBuilder::default())
-            .map_err(|e| Error::ServerConfig {
-                message: format!("Failed to create string PV: {}", e),
-            })?;
-        
-        self.pv_names.insert(pv_name.to_string());
-        
-        info!("Added string PV: {}", pv_name);
-        Ok(Pv {
-            inner: shared_pv,
-            name: pv_name.to_string(),
-        })
-    }
-
-    /// Create and add a new enum PV to the server
-    /// 
-    /// # Arguments
-    /// * `pv_name` - Name of the Process Variable
-    /// * `choices` - List of enum choices
-    /// * `selected_value` - Initial value for the PV
-    /// # Returns
-    ///
-    /// Returns a `Pv` handle that can be used to update the PV value.
-    /// # Example
-    /// ```rust,no_run
-    /// use pvxs::Server;
-    /// 
-    /// let mut server = Server::new()?;
-    /// let mut pv = server.add_enum_pv("test:mode", "AUTO", "MANUAL", "TECTONIC", 0)?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn add_enum_pv(&mut self, pv_name: &str, choices: Vec<&str>, selected_value: i16) -> Result<Pv> {
-        // Check if PV already exists
-        if self.pv_names.contains(pv_name) {
-            return Err(Error::ServerConfig {
-                message: format!("PV '{}' already exists on this server", pv_name),
-            });
-        }
-
-        debug!("Adding enum PV: {} with value: {}", pv_name, selected_value);
-        
-        let shared_pv = self.inner
-            .create_pv_enum(pv_name, choices, selected_value, Default::default())
-            .map_err(|e| Error::ServerConfig {
-                message: format!("Failed to create enum PV: {}", e),
-            })?;
-        
-        self.pv_names.insert(pv_name.to_string());
-        
-        info!("Added enum PV: {}", pv_name);
-        Ok(Pv {
-            inner: shared_pv,
-            name: pv_name.to_string(),
-        })
-    }
-
-    /// Create and add a new read-only double PV to the server
-    ///
-    /// # Arguments
-    ///
-    /// * `pv_name` - Name of the Process Variable
-    /// * `initial_value` - Initial value for the PV
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Pv` handle that can be used to update the PV value.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use pvxs::Server;
-    ///
-    /// let mut server = Server::new()?;
-    /// let mut pv = server.add_readonly_double_pv("test:constant", 299792458.0)?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn add_readonly_double_pv(&mut self, pv_name: &str, initial_value: f64) -> Result<Pv> {
-        // Check if PV already exists
-        if self.pv_names.contains(pv_name) {
-            return Err(Error::ServerConfig {
-                message: format!("PV '{}' already exists on this server", pv_name),
-            });
-        }
-
-        debug!("Adding readonly double PV: {} with value: {}", pv_name, initial_value);
-        
-        let shared_pv = self.inner
-            .create_readonly_pv_double(pv_name, initial_value, NTScalarMetadataBuilder::default())
-            .map_err(|e| Error::ServerConfig {
-                message: format!("Failed to create readonly double PV: {}", e),
-            })?;
-        
-        self.pv_names.insert(pv_name.to_string());
-        
-        info!("Added readonly double PV: {}", pv_name);
-        Ok(Pv {
-            inner: shared_pv,
-            name: pv_name.to_string(),
-        })
-    }
-
-    /// Remove a PV from the server
-    ///
-    /// # Arguments
-    ///
-    /// * `pv_name` - Name of the Process Variable to remove
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use pvxs::Server;
-    ///
-    /// let mut server = Server::new()?;
-    /// server.add_double_pv("temp:pv", 0.0)?;
-    /// server.remove_pv("temp:pv")?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn remove_pv(&mut self, pv_name: &str) -> Result<()> {
-        debug!("Removing PV: {}", pv_name);
-        
-        self.inner
-            .remove_pv(pv_name)
-            .map_err(|e| Error::ServerConfig {
-                message: format!("Failed to remove PV '{}': {}", pv_name, e),
-            })?;
-        
-        // Remove from tracking set
-        self.pv_names.remove(pv_name);
-        
-        info!("Removed PV: {}", pv_name);
-        Ok(())
-    }
-
-    /// Start the server
-    ///
-    /// Begins listening for client connections and serving PVs.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use pvxs::Server;
-    ///
-    /// let mut server = Server::new()?;
-    /// server.add_double_pv("test:pv", 42.0)?;
-    /// server.start()?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn start(&mut self) -> Result<()> {
-        info!("Starting PVXS server");
-        
-        self.inner
-            .start()
-            .map_err(|e| Error::ServerConfig {
-                message: format!("Failed to start server: {}", e),
-            })?;
-        
-        info!("PVXS server started successfully on TCP port {}, UDP port {}", 
-               self.tcp_port(), self.udp_port());
-        Ok(())
-    }
-
-    /// Stop the server
-    ///
-    /// Stops listening for connections and shuts down the server.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use pvxs::Server;
-    ///
-    /// let mut server = Server::new()?;
-    /// server.start()?;
-    /// server.stop()?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn stop(&mut self) -> Result<()> {
-        info!("Stopping PVXS server");
-        
-        self.inner
-            .stop()
-            .map_err(|e| Error::ServerConfig {
-                message: format!("Failed to stop server: {}", e),
-            })?;
-        
-        info!("PVXS server stopped");
-        Ok(())
-    }
-
-    /// Get the TCP port the server is using
-    ///
-    /// Returns 
-    ///  - non-zero for isolated servers.
-    ///  - For remoted servers, tries to bind to 5075 (EPICS v7) first but may fall back to a random port if that is in use.
+impl ServerHandle {
     pub fn tcp_port(&self) -> u16 {
-        self.inner.tcp_port()
+        self.tcp_port
     }
 
-    /// Get the UDP port the server is using
-    ///
-    /// Returns 
-    ///  - non-zero for isolated servers.
-    ///  - For remote servers, tries to bind to 5076 (EPICS v7) first but may fall back to a random port if that is in use.
     pub fn udp_port(&self) -> u16 {
-        self.inner.udp_port()
+        self.udp_port
     }
-}
 
-impl std::fmt::Debug for Server {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Server")
-            .field("tcp_port", &self.tcp_port())
-            .field("udp_port", &self.udp_port())
-            .finish()
+    fn send<T>(&self, cmd: ManagerCommand, rx: channel::Receiver<T>) -> Result<T> {
+        self.tx
+            .send(cmd)
+            .map_err(|_| PvxsError::new("server worker stopped"))?;
+        rx.recv()
+            .map_err(|_| PvxsError::new("server worker stopped"))
+    }
+
+    pub fn create_pv_double(
+        &self,
+        name: &str,
+        initial: f64,
+        metadata: NTScalarMetadataBuilder,
+    ) -> Result<()> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::CreateDouble {
+                name: name.to_string(),
+                initial,
+                metadata,
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn create_pv_double_array(
+        &self,
+        name: &str,
+        initial: Vec<f64>,
+        metadata: NTScalarMetadataBuilder,
+    ) -> Result<()> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::CreateDoubleArray {
+                name: name.to_string(),
+                initial,
+                metadata,
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn create_pv_int32(
+        &self,
+        name: &str,
+        initial: i32,
+        metadata: NTScalarMetadataBuilder,
+    ) -> Result<()> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::CreateInt32 {
+                name: name.to_string(),
+                initial,
+                metadata,
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn create_pv_int32_array(
+        &self,
+        name: &str,
+        initial: Vec<i32>,
+        metadata: NTScalarMetadataBuilder,
+    ) -> Result<()> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::CreateInt32Array {
+                name: name.to_string(),
+                initial,
+                metadata,
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn create_pv_string(
+        &self,
+        name: &str,
+        initial: &str,
+        metadata: NTScalarMetadataBuilder,
+    ) -> Result<()> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::CreateString {
+                name: name.to_string(),
+                initial: initial.to_string(),
+                metadata,
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn create_pv_string_array(
+        &self,
+        name: &str,
+        initial: Vec<String>,
+        metadata: NTScalarMetadataBuilder,
+    ) -> Result<()> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::CreateStringArray {
+                name: name.to_string(),
+                initial,
+                metadata,
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn create_pv_enum(
+        &self,
+        name: &str,
+        choices: Vec<&str>,
+        selected_index: i16,
+        metadata: NTEnumMetadataBuilder,
+    ) -> Result<()> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::CreateEnum {
+                name: name.to_string(),
+                choices: choices.iter().map(|s| s.to_string()).collect(),
+                selected_index,
+                metadata,
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn post_double(&self, name: &str, value: f64) -> Result<()> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::PostDouble {
+                name: name.to_string(),
+                value,
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn post_double_array(&self, name: &str, value: Vec<f64>) -> Result<()> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::PostDoubleArray {
+                name: name.to_string(),
+                value,
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn post_int32(&self, name: &str, value: i32) -> Result<()> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::PostInt32 {
+                name: name.to_string(),
+                value,
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn post_int32_array(&self, name: &str, value: Vec<i32>) -> Result<()> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::PostInt32Array {
+                name: name.to_string(),
+                value,
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn post_string(&self, name: &str, value: &str) -> Result<()> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::PostString {
+                name: name.to_string(),
+                value: value.to_string(),
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn post_string_array(&self, name: &str, value: Vec<String>) -> Result<()> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::PostStringArray {
+                name: name.to_string(),
+                value,
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn post_enum(&self, name: &str, value: i16) -> Result<()> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::PostEnum {
+                name: name.to_string(),
+                value,
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn remove_pv(&self, name: &str) -> Result<()> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::Remove {
+                name: name.to_string(),
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn fetch_double(&self, name: &str) -> Result<FetchedDouble> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::FetchDouble {
+                name: name.to_string(),
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn fetch_int32(&self, name: &str) -> Result<FetchedInt32> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::FetchInt32 {
+                name: name.to_string(),
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn fetch_string(&self, name: &str) -> Result<FetchedString> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::FetchString {
+                name: name.to_string(),
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn fetch_double_array(&self, name: &str) -> Result<FetchedDoubleArray> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::FetchDoubleArray {
+                name: name.to_string(),
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn fetch_int32_array(&self, name: &str) -> Result<FetchedInt32Array> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::FetchInt32Array {
+                name: name.to_string(),
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn fetch_string_array(&self, name: &str) -> Result<FetchedStringArray> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::FetchStringArray {
+                name: name.to_string(),
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn fetch_enum(&self, name: &str) -> Result<FetchedEnum> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::FetchEnum {
+                name: name.to_string(),
+                reply: tx,
+            },
+            rx,
+        )?
     }
 }
 
 // ============================================================================
-// Server - Add builder methods
+// Server
 // ============================================================================
+
+/// Pure-Rust pvAccess server with automatic alarm management.
+///
+/// Mirrors `pvxs-sys::Server` exactly — same method names and signatures.
+/// The in-process PV registry is fully functional.
+/// The pvAccess TCP/UDP transport layer is a TODO — see TODO.md.
+pub struct Server {
+    handle: ServerHandle,
+    join: Option<thread::JoinHandle<()>>,
+}
 
 impl Server {
-    /// Create a new double PV builder
+    /// Start a server configured from environment variables.
     ///
-    /// Returns a builder that can be configured with metadata before adding to the server.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use pvxs::Server;
-    ///
-    /// let mut server = Server::new()?;
-    /// let temp_pv = server.double_pv("device:temp")
-    ///     .initial_value(25.0)
-    ///     .units("degC")
-    ///     .precision(1)
-    ///     .add()?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn double_pv(&mut self, name: impl Into<String>) -> DoublePvBuilder<'_> {
-        DoublePvBuilder::new(self, name)
+    /// TODO(network): no TCP/UDP port is bound yet; `tcp_port()` returns 0.
+    pub fn start_from_env() -> Result<Self> {
+        Self::start_inner()
     }
 
-    /// Create a new int32 PV builder
+    /// Start an isolated server (system-assigned ports, ideal for tests).
     ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use pvxs::Server;
-    ///
-    /// let mut server = Server::new()?;
-    /// let counter = server.int32_pv("device:count")
-    ///     .initial_value(0)
-    ///     .add()?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn int32_pv(&mut self, name: impl Into<String>) -> Int32PvBuilder<'_> {
-        Int32PvBuilder::new(self, name)
+    /// TODO(network): no TCP/UDP port is bound yet; `tcp_port()` returns 0.
+    pub fn start_isolated() -> Result<Self> {
+        Self::start_inner()
     }
 
-    /// Create a new string PV builder
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use pvxs::Server;
-    ///
-    /// let mut server = Server::new()?;
-    /// let status = server.string_pv("device:status")
-    ///     .initial_value("IDLE")
-    ///     .add()?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn string_pv(&mut self, name: impl Into<String>) -> StringPvBuilder<'_> {
-        StringPvBuilder::new(self, name)
+    fn start_inner() -> Result<Self> {
+        let (tx, rx) = channel::unbounded::<ManagerCommand>();
+        let join = thread::spawn(move || run_worker(rx));
+        Ok(Self {
+            handle: ServerHandle {
+                tx,
+                // TODO(network): replace with real bound port
+                tcp_port: 0,
+                udp_port: 0,
+            },
+            join: Some(join),
+        })
+    }
+
+    /// Get a clone-able handle to this server for use from other threads.
+    pub fn handle(&self) -> ServerHandle {
+        self.handle.clone()
+    }
+
+    /// TCP port the server is listening on (0 until transport layer is implemented).
+    pub fn tcp_port(&self) -> u16 {
+        self.handle.tcp_port()
+    }
+
+    /// UDP port the server is using (0 until transport layer is implemented).
+    pub fn udp_port(&self) -> u16 {
+        self.handle.udp_port()
+    }
+
+    pub fn create_pv_double(
+        &self,
+        name: &str,
+        initial: f64,
+        metadata: NTScalarMetadataBuilder,
+    ) -> Result<()> {
+        self.handle.create_pv_double(name, initial, metadata)
+    }
+
+    pub fn create_pv_double_array(
+        &self,
+        name: &str,
+        initial: Vec<f64>,
+        metadata: NTScalarMetadataBuilder,
+    ) -> Result<()> {
+        self.handle.create_pv_double_array(name, initial, metadata)
+    }
+
+    pub fn create_pv_int32(
+        &self,
+        name: &str,
+        initial: i32,
+        metadata: NTScalarMetadataBuilder,
+    ) -> Result<()> {
+        self.handle.create_pv_int32(name, initial, metadata)
+    }
+
+    pub fn create_pv_int32_array(
+        &self,
+        name: &str,
+        initial: Vec<i32>,
+        metadata: NTScalarMetadataBuilder,
+    ) -> Result<()> {
+        self.handle.create_pv_int32_array(name, initial, metadata)
+    }
+
+    pub fn create_pv_string(
+        &self,
+        name: &str,
+        initial: &str,
+        metadata: NTScalarMetadataBuilder,
+    ) -> Result<()> {
+        self.handle.create_pv_string(name, initial, metadata)
+    }
+
+    pub fn create_pv_string_array(
+        &self,
+        name: &str,
+        initial: Vec<String>,
+        metadata: NTScalarMetadataBuilder,
+    ) -> Result<()> {
+        self.handle.create_pv_string_array(name, initial, metadata)
+    }
+
+    pub fn create_pv_enum(
+        &self,
+        name: &str,
+        choices: Vec<&str>,
+        selected_index: i16,
+        metadata: NTEnumMetadataBuilder,
+    ) -> Result<()> {
+        self.handle
+            .create_pv_enum(name, choices, selected_index, metadata)
+    }
+
+    pub fn post_double(&self, name: &str, value: f64) -> Result<()> {
+        self.handle.post_double(name, value)
+    }
+
+    pub fn post_double_array(&self, name: &str, value: Vec<f64>) -> Result<()> {
+        self.handle.post_double_array(name, value)
+    }
+
+    pub fn post_int32(&self, name: &str, value: i32) -> Result<()> {
+        self.handle.post_int32(name, value)
+    }
+
+    pub fn post_int32_array(&self, name: &str, value: Vec<i32>) -> Result<()> {
+        self.handle.post_int32_array(name, value)
+    }
+
+    pub fn post_string(&self, name: &str, value: &str) -> Result<()> {
+        self.handle.post_string(name, value)
+    }
+
+    pub fn post_string_array(&self, name: &str, value: Vec<String>) -> Result<()> {
+        self.handle.post_string_array(name, value)
+    }
+
+    pub fn post_enum(&self, name: &str, value: i16) -> Result<()> {
+        self.handle.post_enum(name, value)
+    }
+
+    pub fn remove_pv(&self, name: &str) -> Result<()> {
+        self.handle.remove_pv(name)
+    }
+
+    pub fn fetch_double(&self, name: &str) -> Result<FetchedDouble> {
+        self.handle.fetch_double(name)
+    }
+
+    pub fn fetch_int32(&self, name: &str) -> Result<FetchedInt32> {
+        self.handle.fetch_int32(name)
+    }
+
+    pub fn fetch_string(&self, name: &str) -> Result<FetchedString> {
+        self.handle.fetch_string(name)
+    }
+
+    pub fn fetch_double_array(&self, name: &str) -> Result<FetchedDoubleArray> {
+        self.handle.fetch_double_array(name)
+    }
+
+    pub fn fetch_int32_array(&self, name: &str) -> Result<FetchedInt32Array> {
+        self.handle.fetch_int32_array(name)
+    }
+
+    pub fn fetch_string_array(&self, name: &str) -> Result<FetchedStringArray> {
+        self.handle.fetch_string_array(name)
+    }
+
+    pub fn fetch_enum(&self, name: &str) -> Result<FetchedEnum> {
+        self.handle.fetch_enum(name)
+    }
+
+    /// Stop the server, consuming it and freeing all resources.
+    pub fn stop_drop(mut self) -> Result<()> {
+        let (tx, rx) = channel::bounded(1);
+        self.handle
+            .tx
+            .send(ManagerCommand::Stop { reply: tx })
+            .map_err(|_| PvxsError::new("server worker stopped"))?;
+        let result = rx
+            .recv()
+            .map_err(|_| PvxsError::new("server worker stopped"))?;
+        if let Some(join) = self.join.take() {
+            let _ = join.join();
+        }
+        result
     }
 }
 
+impl Drop for Server {
+    fn drop(&mut self) {
+        // If stop_drop was not called, send Stop anyway so the worker exits.
+        if self.join.is_some() {
+            let (tx, _rx) = channel::bounded(1);
+            let _ = self.handle.tx.send(ManagerCommand::Stop { reply: tx });
+            if let Some(join) = self.join.take() {
+                let _ = join.join();
+            }
+        }
+    }
+}
 
+// ============================================================================
+// Tests
+// ============================================================================
 
+#[cfg(test)]
+mod tests {
+    use super::*;
 
+    fn server() -> Server {
+        Server::start_isolated().expect("server start")
+    }
+
+    #[test]
+    fn create_and_fetch_double() {
+        let s = server();
+        s.create_pv_double("A", 3.14, NTScalarMetadataBuilder::new())
+            .unwrap();
+        let f = s.fetch_double("A").unwrap();
+        assert!((f.value - 3.14).abs() < 1e-9);
+        assert_eq!(f.alarm_severity, AlarmSeverity::NoAlarm);
+        s.stop_drop().unwrap();
+    }
+
+    #[test]
+    fn post_double_updates_value() {
+        let s = server();
+        s.create_pv_double("B", 0.0, NTScalarMetadataBuilder::new())
+            .unwrap();
+        s.post_double("B", 42.0).unwrap();
+        let f = s.fetch_double("B").unwrap();
+        assert!((f.value - 42.0).abs() < 1e-9);
+        s.stop_drop().unwrap();
+    }
+
+    #[test]
+    fn duplicate_pv_name_errors() {
+        let s = server();
+        s.create_pv_double("C", 0.0, NTScalarMetadataBuilder::new())
+            .unwrap();
+        assert!(s
+            .create_pv_double("C", 1.0, NTScalarMetadataBuilder::new())
+            .is_err());
+        s.stop_drop().unwrap();
+    }
+
+    #[test]
+    fn create_and_fetch_int32() {
+        let s = server();
+        s.create_pv_int32("D", 7, NTScalarMetadataBuilder::new())
+            .unwrap();
+        let f = s.fetch_int32("D").unwrap();
+        assert_eq!(f.value, 7);
+        s.stop_drop().unwrap();
+    }
+
+    #[test]
+    fn create_and_fetch_string() {
+        let s = server();
+        s.create_pv_string("E", "hello", NTScalarMetadataBuilder::new())
+            .unwrap();
+        let f = s.fetch_string("E").unwrap();
+        assert_eq!(f.value, "hello");
+        s.stop_drop().unwrap();
+    }
+
+    #[test]
+    fn create_and_fetch_enum() {
+        let s = server();
+        s.create_pv_enum(
+            "F",
+            vec!["OFF", "ON"],
+            1,
+            NTEnumMetadataBuilder::new(),
+        )
+        .unwrap();
+        let f = s.fetch_enum("F").unwrap();
+        assert_eq!(f.value, 1);
+        assert_eq!(f.value_choices, vec!["OFF", "ON"]);
+        s.stop_drop().unwrap();
+    }
+
+    #[test]
+    fn create_and_fetch_double_array() {
+        let s = server();
+        s.create_pv_double_array("G", vec![1.0, 2.0, 3.0], NTScalarMetadataBuilder::new())
+            .unwrap();
+        let f = s.fetch_double_array("G").unwrap();
+        assert_eq!(f.value, vec![1.0, 2.0, 3.0]);
+        s.stop_drop().unwrap();
+    }
+
+    #[test]
+    fn remove_pv() {
+        let s = server();
+        s.create_pv_double("H", 0.0, NTScalarMetadataBuilder::new())
+            .unwrap();
+        s.remove_pv("H").unwrap();
+        assert!(s.fetch_double("H").is_err());
+        s.stop_drop().unwrap();
+    }
+
+    #[test]
+    fn control_limit_rejection() {
+        use crate::ControlMetadata;
+        let s = server();
+        let meta = NTScalarMetadataBuilder::new().control(ControlMetadata {
+            limit_low: 0.0,
+            limit_high: 10.0,
+            min_step: 0.0,
+        });
+        s.create_pv_double("I", 5.0, meta).unwrap();
+        // Value outside control limits should be rejected
+        assert!(s.post_double("I", 20.0).is_err());
+        s.stop_drop().unwrap();
+    }
+
+    #[test]
+    fn server_handle_clone() {
+        let s = server();
+        let h = s.handle();
+        h.create_pv_double("J", 1.0, NTScalarMetadataBuilder::new())
+            .unwrap();
+        let f = h.fetch_double("J").unwrap();
+        assert!((f.value - 1.0).abs() < 1e-9);
+        s.stop_drop().unwrap();
+    }
+}

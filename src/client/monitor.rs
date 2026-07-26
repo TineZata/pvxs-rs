@@ -1,613 +1,273 @@
-use crate::error::{Error, Result};
-use crate::types::Value;
-use epics_pvxs_sys::{Monitor as PvxsMonitor, MonitorBuilder as PvxsMonitorBuilder};
-use tracing::{debug, info, warn};
-use std::sync::{Arc, Mutex};
+use std::collections::{HashMap, VecDeque};
+use crate::{PvxsError, Result, Value};
+use std::fmt;
+use std::sync::{Arc, Mutex, OnceLock, Weak};
+use std::time::{Duration, Instant};
 
-/// Event types that can occur during monitoring
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MonitorEvent {
-    /// Monitor connected to PV
-    Connected,
-    /// Monitor disconnected from PV
-    Disconnected,
-    /// Monitor finished normally (no more events will be received)
-    Finished,
-    /// Remote error from server
-    RemoteError(String),
-    /// Client-side error
-    ClientError(String),
+/// Internal shared queue between the network driver and the consumer.
+struct MonitorInner {
+    name: String,
+    running: bool,
+    connected: bool,
+    queue: VecDeque<Value>,
+    connect_exception: bool,
+    disconnect_exception: bool,
 }
 
-/// Callback type for monitor events
-///
-/// Called when connection state changes or errors occur.
-pub type MonitorEventCallback = Box<dyn FnMut(&str, MonitorEvent) + Send>;
+type MonitorSubscribers = Vec<Weak<Mutex<MonitorInner>>>;
+static MONITOR_REGISTRY: OnceLock<Mutex<HashMap<String, MonitorSubscribers>>> = OnceLock::new();
 
-/// High-level monitor for receiving PV updates
+fn monitor_registry() -> &'static Mutex<HashMap<String, MonitorSubscribers>> {
+    MONITOR_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn register_monitor(name: &str, inner: &Arc<Mutex<MonitorInner>>) {
+    let mut guard = monitor_registry().lock().unwrap();
+    let subscribers = guard.entry(name.to_string()).or_default();
+    subscribers.retain(|entry| entry.upgrade().is_some());
+    subscribers.push(Arc::downgrade(inner));
+}
+
+pub(crate) fn publish_value(name: &str, value: Value) -> usize {
+    let mut guard = monitor_registry().lock().unwrap();
+    let subscribers = guard.entry(name.to_string()).or_default();
+    subscribers.retain(|entry| entry.upgrade().is_some());
+
+    let mut delivered = 0;
+    let mut stale_indices = Vec::new();
+    for (idx, entry) in subscribers.iter().enumerate() {
+        if let Some(inner) = entry.upgrade() {
+            let mut state = inner.lock().unwrap();
+            state.queue.push_back(value.clone());
+            state.connected = true;
+            delivered += 1;
+        } else {
+            stale_indices.push(idx);
+        }
+    }
+
+    for idx in stale_indices.into_iter().rev() {
+        subscribers.remove(idx);
+    }
+
+    delivered
+}
+
+/// A subscription to value changes for a process variable.
 ///
-/// Provides ergonomic APIs beyond the raw -sys bindings:
-/// - Automatic start/stop lifecycle management
-/// - Iterator support for draining updates
-/// - Event callbacks for connection state changes
-/// - Convenience methods for common patterns
-/// - Better error handling
+/// Mirrors the `pvxs-sys::Monitor` API exactly.
 ///
-/// # Examples
-///
-/// ```rust,no_run
-/// use pvxs::Client;
-///
-/// let mut client = Client::new()?;
-/// let mut monitor = client.monitor("MY:PV")?;
-///
-/// // Iterator pattern - drains all pending updates
-/// for value in monitor.drain() {
-///     println!("Value: {}", value);
-/// }
-///
-/// // With event callbacks
-/// let mut monitor = client.monitor_builder("MY:PV")?
-///     .on_connected(|name| println!("{} connected!", name))
-///     .on_disconnected(|name| println!("{} disconnected!", name))
-///     .build()?;
-/// # Ok::<(), pvxs::Error>(())
-/// ```
+/// TODO(network): pop() / try_get_update() will block/return None until the
+/// pvAccess transport layer delivers real data.
 pub struct Monitor {
-    pub(super) inner: PvxsMonitor,
-    pub(super) pv_name: String,
-    started: bool,
-    event_callback: Option<Arc<Mutex<MonitorEventCallback>>>,
+    inner: Arc<Mutex<MonitorInner>>,
 }
 
 impl Monitor {
-    pub(super) fn new(inner: PvxsMonitor, pv_name: String) -> Self {
-        Self { 
-            inner, 
-            pv_name,
-            started: false,
-            event_callback: None,
-        }
+    pub(crate) fn new(name: String) -> Self {
+        let inner = Arc::new(Mutex::new(MonitorInner {
+            name: name.clone(),
+            running: false,
+            connected: false,
+            queue: VecDeque::new(),
+            connect_exception: false,
+            disconnect_exception: true,
+        }));
+        register_monitor(&name, &inner);
+        Self { inner }
     }
 
-    pub(super) fn with_callback(
-        inner: PvxsMonitor, 
-        pv_name: String, 
-        callback: Option<Arc<Mutex<MonitorEventCallback>>>
-    ) -> Self {
-        Self { 
-            inner, 
-            pv_name,
-            started: false,
-            event_callback: callback,
-        }
+    pub(crate) fn push_update(&mut self, value: Value) {
+        self.inner.lock().unwrap().queue.push_back(value);
     }
 
-    /// Start the monitor
-    ///
-    /// Begins receiving updates from the PV. Idempotent - safe to call multiple times.
-    pub fn start(&mut self) {
-        if !self.started {
-            debug!("Starting monitor for PV: {}", self.pv_name);
-            self.inner.start();
-            self.started = true;
-        }
+    pub(crate) fn set_connected(&mut self, connected: bool) {
+        self.inner.lock().unwrap().connected = connected;
     }
 
-    /// Stop the monitor
-    ///
-    /// Stops receiving updates. Idempotent - safe to call multiple times.
-    pub fn stop(&mut self) {
-        if self.started {
-            debug!("Stopping monitor for PV: {}", self.pv_name);
-            self.inner.stop();
-            self.started = false;
-        }
+    /// Start monitoring.
+    pub fn start(&mut self) -> Result<()> {
+        // TODO(network): open a pvAccess subscription channel.
+        self.inner.lock().unwrap().running = true;
+        Ok(())
     }
 
-    /// Check if the monitor is currently started
-    pub fn is_started(&self) -> bool {
-        self.started
+    /// Stop monitoring.
+    pub fn stop(&mut self) -> Result<()> {
+        // TODO(network): close the subscription channel.
+        self.inner.lock().unwrap().running = false;
+        Ok(())
     }
 
-    /// Get the next update from the queue
-    ///
-    /// Returns `None` if the queue is empty. Processes monitor events and triggers callbacks.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// # use pvxs::Client;
-    /// # let mut client = Client::new().unwrap();
-    /// let mut monitor = client.monitor("MY:PV")?;
-    /// 
-    /// loop {
-    ///     match monitor.next_update()? {
-    ///         Some(value) => println!("Value: {}", value),
-    ///         None => break, // Queue empty
-    ///     }
-    /// }
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn next_update(&mut self) -> Result<Option<Value>> {
-        match self.inner.pop() {
-            Ok(Some(pvxs_value)) => Ok(Some(Value::from_pvxs(pvxs_value))),
-            Ok(None) => Ok(None),
-            Err(sys_event) => {
-                // Convert sys event to our event type and trigger callback
-                let event = Self::convert_event(&sys_event);
-                let event_name = format!("{:?}", event);
-                
-                match &event {
-                    MonitorEvent::Connected => {
-                        info!("Monitor '{}' connected", self.pv_name);
-                    }
-                    MonitorEvent::Disconnected => {
-                        warn!("Monitor '{}' disconnected", self.pv_name);
-                    }
-                    MonitorEvent::Finished => {
-                        info!("Monitor '{}' finished", self.pv_name);
-                    }
-                    MonitorEvent::RemoteError(msg) => {
-                        warn!("Monitor '{}' remote error: {}", self.pv_name, msg);
-                    }
-                    MonitorEvent::ClientError(msg) => {
-                        warn!("Monitor '{}' client error: {}", self.pv_name, msg);
-                    }
-                }
-
-                // Trigger user callback if registered
-                if let Some(callback) = &self.event_callback {
-                    if let Ok(mut cb) = callback.lock() {
-                        cb(&self.pv_name, event);
-                    }
-                }
-
-                debug!("Monitor event for {}: {}", self.pv_name, event_name);
-                Ok(None)
-            }
-        }
+    /// Returns `true` if monitoring is active.
+    pub fn is_running(&self) -> bool {
+        self.inner.lock().unwrap().running
     }
 
-    /// Convert sys-level MonitorEvent to our high-level type
-    fn convert_event(sys_event: &epics_pvxs_sys::MonitorEvent) -> MonitorEvent {
-        use epics_pvxs_sys::MonitorEvent as SysEvent;
-        
-        match sys_event {
-            SysEvent::Connected(_) => MonitorEvent::Connected,
-            SysEvent::Disconnected(_) => MonitorEvent::Disconnected,
-            SysEvent::Finished(_) => MonitorEvent::Finished,
-            SysEvent::RemoteError(msg) => MonitorEvent::RemoteError(msg.clone()),
-            SysEvent::ClientError(msg) => MonitorEvent::ClientError(msg.clone()),
-        }
-    }
-
-    /// Drain all pending updates from the queue
-    ///
-    /// Returns an iterator that yields all currently queued updates.
-    /// Stops when the queue is empty.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// # use pvxs::Client;
-    /// # let mut client = Client::new().unwrap();
-    /// let mut monitor = client.monitor("MY:PV")?;
-    ///
-    /// // Process all pending updates
-    /// for value in monitor.drain() {
-    ///     println!("Value: {}", value);
-    /// }
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn drain(&mut self) -> MonitorDrain<'_> {
-        MonitorDrain { monitor: self }
-    }
-
-    /// Wait for and return the next update
-    ///
-    /// Blocks until an update is available or the timeout expires.
-    /// This is more efficient than polling `next_update()` in a loop.
-    ///
-    /// # Arguments
-    ///
-    /// * `timeout_ms` - Maximum time to wait in milliseconds
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(Some(value))` - Update received
-    /// * `Ok(None)` - Timeout expired with no update
-    /// * `Err` - Error occurred
-    pub fn wait_for_update(&mut self, timeout_ms: u64) -> Result<Option<Value>> {
-        use std::thread;
-        use std::time::{Duration, Instant};
-        
-        let timeout = Duration::from_millis(timeout_ms);
-        let start = Instant::now();
-        
-        loop {
-            if let Some(value) = self.next_update()? {
-                return Ok(Some(value));
-            }
-            
-            if start.elapsed() >= timeout {
-                return Ok(None);
-            }
-            
-            // Small sleep to avoid busy-waiting
-            thread::sleep(Duration::from_millis(10));
-        }
-    }
-
-    /// Check if the monitor is connected to the PV
-    pub fn is_connected(&self) -> bool {
-        self.inner.is_connected()
-    }
-
-    /// Check if there are updates available
-    ///
-    /// Returns `true` if calling `next_update()` would return data immediately.
+    /// Returns `true` if updates are available in the queue.
     pub fn has_update(&self) -> bool {
-        self.inner.has_update()
+        !self.inner.lock().unwrap().queue.is_empty()
     }
 
-    /// Get the PV name being monitored
-    pub fn name(&self) -> &str {
-        &self.pv_name
+    /// Returns `true` if connected to the remote PV.
+    pub fn is_connected(&self) -> bool {
+        self.inner.lock().unwrap().connected
     }
 
-    /// Collect all pending updates into a Vec
-    ///
-    /// Convenience method that drains the queue and collects into a vector.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// # use pvxs::Client;
-    /// # let mut client = Client::new().unwrap();
-    /// let mut monitor = client.monitor("MY:PV")?;
-    /// let updates = monitor.collect_updates();
-    /// println!("Received {} updates", updates.len());
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn collect_updates(&mut self) -> Vec<Value> {
-        self.drain().collect()
+    /// The PV name being monitored.
+    pub fn name(&self) -> String {
+        self.inner.lock().unwrap().name.clone()
     }
 
-    /// Get the latest update, discarding intermediate values
+    /// Get the next update, blocking until one arrives or the timeout elapses.
     ///
-    /// Returns the most recent value from the queue, skipping over older updates.
-    /// Useful when you only care about the current state.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// # use pvxs::Client;
-    /// # let mut client = Client::new().unwrap();
-    /// let mut monitor = client.monitor("MY:PV")?;
-    ///
-    /// // Only care about the latest value
-    /// if let Some(latest) = monitor.latest_update()? {
-    ///     println!("Latest value: {}", latest);
-    /// }
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn latest_update(&mut self) -> Result<Option<Value>> {
-        let mut latest = None;
-        while let Some(value) = self.next_update()? {
-            latest = Some(value);
+    /// TODO(network): will block forever until the transport layer pushes data.
+    pub fn get_update(&mut self, timeout: f64) -> Result<Value> {
+        let deadline = Instant::now() + Duration::from_secs_f64(timeout);
+        loop {
+            {
+                let mut guard = self.inner.lock().unwrap();
+                if let Some(v) = guard.queue.pop_front() {
+                    return Ok(v);
+                }
+            }
+            if Instant::now() >= deadline {
+                return Err(PvxsError::new("monitor get_update timed out"));
+            }
+            std::thread::sleep(Duration::from_millis(10));
         }
-        Ok(latest)
+    }
+
+    /// Try to get the next update without blocking.
+    pub fn try_get_update(&mut self) -> Result<Option<Value>> {
+        Ok(self.inner.lock().unwrap().queue.pop_front())
+    }
+
+    /// Pop the next item from the subscription queue (PVXS-style).
+    ///
+    /// Returns:
+    /// - `Ok(Some(Value))` — a new value is available.
+    /// - `Ok(None)` — the queue is empty.
+    /// - `Err(MonitorEvent::Connected)` — connection event (when `connect_exception` is set).
+    /// - `Err(MonitorEvent::Disconnected)` — disconnection event.
+    /// - `Err(MonitorEvent::Finished)` — subscription ended.
+    pub fn pop(&mut self) -> std::result::Result<Option<Value>, MonitorEvent> {
+        Ok(self.inner.lock().unwrap().queue.pop_front())
     }
 }
 
-impl Drop for Monitor {
-    fn drop(&mut self) {
-        self.stop();
-    }
-}
 
-impl std::fmt::Debug for Monitor {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Monitor")
-            .field("pv_name", &self.pv_name)
-            .field("started", &self.started)
-            .field("connected", &self.is_connected())
-            .field("has_update", &self.has_update())
-            .finish()
-    }
-}
-
-/// Iterator that drains pending updates from a monitor
+/// Builder for creating monitors with advanced configuration.
 ///
-/// Created by calling [`Monitor::drain()`].
-pub struct MonitorDrain<'a> {
-    monitor: &'a mut Monitor,
-}
-
-impl<'a> Iterator for MonitorDrain<'a> {
-    type Item = Value;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.monitor.next_update().ok().flatten()
-    }
-}
-
-/// Builder for configuring a monitor
-///
-/// Allows configuration of event handling and callbacks before creating the monitor.
-///
-/// # Example
-///
-/// ```rust,no_run
-/// use pvxs::Client;
-///
-/// extern "C" fn my_callback() {
-///     println!("New data!");
-/// }
-///
-/// let mut client = Client::new()?;
-/// let monitor = client.monitor_builder("MY:PV")?
-///     .event(my_callback)
-///     .build()?;
-/// # Ok::<(), pvxs::Error>(())
-/// ```
+/// Mirrors `pvxs-sys::MonitorBuilder` exactly.
 pub struct MonitorBuilder {
-    pub(super) inner: PvxsMonitorBuilder,
-    pub(super) pv_name: String,
-    auto_start: bool,
-    event_callback: Option<Arc<Mutex<MonitorEventCallback>>>,
+    name: String,
+    connect_exception: bool,
+    disconnect_exception: bool,
 }
 
 impl MonitorBuilder {
-    pub(super) fn new(inner: PvxsMonitorBuilder, pv_name: String) -> Self {
-        Self { 
-            inner, 
-            pv_name,
-            auto_start: true, // Auto-start by default for convenience
-            event_callback: None,
+    pub (crate) fn new(name: String) -> Self {
+        Self {
+            name,
+            connect_exception: false,
+            disconnect_exception: true,
         }
     }
 
-    /// Control whether the monitor starts automatically when built
+    /// Enable or disable connection exceptions in the monitor queue.
     ///
-    /// By default, monitors start automatically. Set to `false` if you want
-    /// to manually control when the monitor starts.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// # use pvxs::Client;
-    /// # let mut client = Client::new().unwrap();
-    /// let mut monitor = client.monitor_builder("MY:PV")?
-    ///     .auto_start(false)  // Don't start automatically
-    ///     .build()?;
-    ///
-    /// // Manually start later
-    /// monitor.start();
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn auto_start(mut self, enable: bool) -> Self {
-        self.auto_start = enable;
+    /// `true` = throw `MonitorEvent::Connected` on connect.
+    /// `false` = suppress connection events (default).
+    pub fn connect_exception(mut self, enable: bool) -> Self {
+        self.connect_exception = enable;
         self
     }
 
-    /// Register a callback for when the monitor connects to the PV
+    /// Enable or disable disconnection exceptions in the monitor queue.
     ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// # use pvxs::Client;
-    /// # let mut client = Client::new().unwrap();
-    /// let monitor = client.monitor_builder("MY:PV")?
-    ///     .on_connected(|pv_name| {
-    ///         println!("Monitor connected to {}", pv_name);
-    ///     })
-    ///     .build()?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn on_connected<F>(self, mut callback: F) -> Self
-    where
-        F: FnMut(&str) + Send + 'static,
-    {
-        self.on_event(move |name, event| {
-            if matches!(event, MonitorEvent::Connected) {
-                callback(name);
-            }
-        })
-    }
-
-    /// Register a callback for when the monitor disconnects from the PV
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// # use pvxs::Client;
-    /// # let mut client = Client::new().unwrap();
-    /// let monitor = client.monitor_builder("MY:PV")?
-    ///     .on_disconnected(|pv_name| {
-    ///         eprintln!("Monitor disconnected from {}", pv_name);
-    ///     })
-    ///     .build()?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn on_disconnected<F>(self, mut callback: F) -> Self
-    where
-        F: FnMut(&str) + Send + 'static,
-    {
-        self.on_event(move |name, event| {
-            if matches!(event, MonitorEvent::Disconnected) {
-                callback(name);
-            }
-        })
-    }
-
-    /// Register a callback for when the monitor finishes normally
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// # use pvxs::Client;
-    /// # let mut client = Client::new().unwrap();
-    /// let monitor = client.monitor_builder("MY:PV")?
-    ///     .on_finished(|pv_name| {
-    ///         println!("Monitor {} finished", pv_name);
-    ///     })
-    ///     .build()?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn on_finished<F>(self, mut callback: F) -> Self
-    where
-        F: FnMut(&str) + Send + 'static,
-    {
-        self.on_event(move |name, event| {
-            if matches!(event, MonitorEvent::Finished) {
-                callback(name);
-            }
-        })
-    }
-
-    /// Register a callback for remote errors
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// # use pvxs::Client;
-    /// # let mut client = Client::new().unwrap();
-    /// let monitor = client.monitor_builder("MY:PV")?
-    ///     .on_error(|pv_name, error_msg| {
-    ///         eprintln!("Error on {}: {}", pv_name, error_msg);
-    ///     })
-    ///     .build()?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn on_error<F>(self, mut callback: F) -> Self
-    where
-        F: FnMut(&str, &str) + Send + 'static,
-    {
-        self.on_event(move |name, event| {
-            match event {
-                MonitorEvent::RemoteError(ref msg) | MonitorEvent::ClientError(ref msg) => {
-                    callback(name, msg);
-                }
-                _ => {}
-            }
-        })
-    }
-
-    /// Register a callback for all monitor events
-    ///
-    /// This is the most flexible option, allowing you to handle all event types.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// # use pvxs::Client;
-    /// # use pvxs::MonitorEvent;
-    /// let mut client = Client::new().unwrap();
-    /// let monitor = client.monitor_builder("MY:PV")?
-    ///     .on_event(|pv_name, event| {
-    ///         match event {
-    ///             MonitorEvent::Connected => println!("Connected to {}", pv_name),
-    ///             MonitorEvent::Disconnected => println!("Disconnected from {}", pv_name),
-    ///             MonitorEvent::RemoteError(msg) => eprintln!("Error: {}", msg),
-    ///             _ => {}
-    ///         }
-    ///     })
-    ///     .build()?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn on_event<F>(mut self, mut callback: F) -> Self
-    where
-        F: FnMut(&str, MonitorEvent) + Send + 'static,
-    {
-        let existing = self.event_callback.take();
-        
-        self.event_callback = Some(Arc::new(Mutex::new(Box::new(move |name: &str, event: MonitorEvent| {
-            // Call new callback
-            callback(name, event.clone());
-            
-            // Call existing callback if any
-            if let Some(ref existing_cb) = existing {
-                if let Ok(mut cb) = existing_cb.lock() {
-                    cb(name, event);
-                }
-            }
-        }))));
-        
+    /// `true` = throw `MonitorEvent::Disconnected` on disconnect (default).
+    /// `false` = suppress disconnection events.
+    pub fn disconnect_exception(mut self, enable: bool) -> Self {
+        self.disconnect_exception = enable;
         self
     }
 
-    /// Register a callback function to be invoked when the queue goes from empty to not-empty
+    /// Finalise the builder and start the subscription.
     ///
-    /// The callback should be an `extern "C" fn()` function. It will be called when new
-    /// data arrives in an empty queue. Note: The callback fires on queue state transitions
-    /// (empty -> not-empty), so you should drain the queue with `drain()` to reset the state.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use pvxs::Client;
-    ///
-    /// extern "C" fn my_callback() {
-    ///     println!("New data available!");
-    /// }
-    ///
-    /// let mut client = Client::new()?;
-    /// let monitor = client.monitor_builder("MY:PV")?
-    ///     .event(my_callback)
-    ///     .build()?;
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn event(mut self, callback: extern "C" fn()) -> Self {
-        self.inner = self.inner.event(callback);
-        self
-    }
-
-    /// Build and create the monitor
-    ///
-    /// This consumes the builder and returns the configured `Monitor`.
-    /// By default, the monitor is started automatically unless `auto_start(false)` was called.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// # use pvxs::Client;
-    /// # let mut client = Client::new().unwrap();
-    /// let mut monitor = client.monitor_builder("MY:PV")?
-    ///     .on_connected(|name| println!("{} connected", name))
-    ///     .on_disconnected(|name| println!("{} disconnected", name))
-    ///     .build()?;
-    ///
-    /// // Monitor is already started and receiving updates
-    /// for value in monitor.drain() {
-    ///     println!("Value: {}", value);
-    /// }
-    /// # Ok::<(), pvxs::Error>(())
-    /// ```
-    pub fn build(self) -> Result<Monitor> {
-        debug!("Building monitor for PV: {} (auto_start: {})", self.pv_name, self.auto_start);
-        let pvxs_monitor = self.inner
-            .exec()
-            .map_err(|e| Error::from(e))?;
-        
-        let mut monitor = Monitor::with_callback(
-            pvxs_monitor,
-            self.pv_name,
-            self.event_callback,
-        );
-
-        if self.auto_start {
-            monitor.start();
-        }
-
-        Ok(monitor)
-    }
-
-    /// Alias for `build()` for backward compatibility
-    #[deprecated(since = "0.2.0", note = "Use `build()` instead")]
+    /// TODO(network): pvAccess TCP transport not yet implemented.
     pub fn exec(self) -> Result<Monitor> {
-        self.build()
+        let mut m = Monitor::new(self.name);
+        {
+            let mut guard = m.inner.lock().unwrap();
+            guard.connect_exception = self.connect_exception;
+            guard.disconnect_exception = self.disconnect_exception;
+        }
+        Ok(m)
     }
 }
 
+/// Events that can be returned by [`Monitor::pop`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum MonitorEvent {
+    /// Connection event (maskConnected(false)).
+    Connected(String),
+    /// Disconnection event (maskDisconnected(false)).
+    Disconnected(String),
+    /// Subscription completed — no more events will arrive.
+    Finished(String),
+    /// Remote error from the server.
+    RemoteError(String),
+    /// Client-side error.
+    ClientError(String),
+}
+
+impl fmt::Display for MonitorEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MonitorEvent::Connected(msg) => write!(f, "Monitor connected: {}", msg),
+            MonitorEvent::Disconnected(msg) => write!(f, "Monitor disconnected: {}", msg),
+            MonitorEvent::Finished(msg) => write!(f, "Monitor finished: {}", msg),
+            MonitorEvent::RemoteError(msg) => write!(f, "Monitor remote error: {}", msg),
+            MonitorEvent::ClientError(msg) => write!(f, "Monitor client error: {}", msg),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn monitor_queue_preserves_fifo_order() {
+        let mut monitor = Monitor::new("demo".to_string());
+
+        let mut first = Value::new();
+        first.set_field_double("value", 1.0);
+        let mut second = Value::new();
+        second.set_field_double("value", 2.0);
+
+        monitor.push_update(first);
+        monitor.push_update(second);
+
+        let first_out = monitor.try_get_update().unwrap().unwrap();
+        assert_eq!(first_out.get_field_double("value").unwrap(), 1.0);
+
+        let second_out = monitor.try_get_update().unwrap().unwrap();
+        assert_eq!(second_out.get_field_double("value").unwrap(), 2.0);
+    }
+
+    #[test]
+    fn monitor_receives_published_updates() {
+        let mut monitor = Monitor::new("demo".to_string());
+        monitor.start().unwrap();
+
+        let mut value = Value::new();
+        value.set_field_double("value", 3.5);
+
+        publish_value("demo", value);
+
+        let received = monitor.try_get_update().unwrap().unwrap();
+        assert_eq!(received.get_field_double("value").unwrap(), 3.5);
+    }
+}
