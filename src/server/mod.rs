@@ -6,7 +6,16 @@
 //! The pvAccess TCP/UDP transport is a TODO — see TODO.md.
 
 use crossbeam_channel as channel;
+use std::collections::HashMap;
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::mpsc;
+use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::watch;
 
 use crate::{AlarmMetadata, AlarmSeverity, AlarmStatus,
     ControlMetadata, DisplayMetadata, PvxsError, Result,
@@ -18,6 +27,634 @@ pub (crate) mod manager;
 pub use self::ntscalar::NTScalarMetadataBuilder;
 pub use self::ntenum::NTEnumMetadataBuilder;
 pub use self::manager::{ManagerCommand, run_worker};
+
+use crate::proto::{
+    decode_header, decode_size, decode_string, encode_header, encode_size, encode_string,
+    read_i32_le, read_u32_le, take_byte, CMD_BEACON, CMD_CONNECTION_VALIDATED,
+    CMD_CONNECTION_VALIDATION, CMD_CREATE_CHANNEL, CMD_DESTROY_CHANNEL, CMD_DESTROY_REQUEST,
+    CMD_GET, CMD_MONITOR, CMD_PUT, CMD_SEARCH, CMD_SEARCH_RESPONSE, STATUS_OK_NOMSG,
+    TYPE_CACHE_DEFINE, TYPE_FLOAT64, TYPE_INT16, TYPE_INT32, TYPE_STRING,
+};
+use crate::FieldType;
+
+fn parse_search_request(payload: &[u8]) -> Option<(u32, u32)> {
+    let mut cur = payload;
+    if cur.len() < 4 {
+        return None;
+    }
+    let seq_id = u32::from_le_bytes([cur[0], cur[1], cur[2], cur[3]]);
+    // flags(1) + reserved(3) + responseAddress(16) + responsePort(2)
+    if cur.len() < 4 + 1 + 3 + 16 + 2 {
+        return None;
+    }
+    cur = &cur[4 + 1 + 3 + 16 + 2..];
+
+    let proto_count = decode_size(&mut cur)?;
+    for _ in 0..proto_count {
+        let _ = decode_string(&mut cur)?;
+    }
+
+    let channel_count = decode_size(&mut cur)?;
+    if channel_count == 0 {
+        return None;
+    }
+    if cur.len() < 4 {
+        return None;
+    }
+    let cid = u32::from_le_bytes([cur[0], cur[1], cur[2], cur[3]]);
+    Some((seq_id, cid))
+}
+
+fn search_response_addr(ip: Ipv4Addr) -> [u8; 16] {
+    let mut out = [0u8; 16];
+    out[10] = 0xFF;
+    out[11] = 0xFF;
+    out[12..16].copy_from_slice(&ip.octets());
+    out
+}
+
+fn build_search_response(seq_id: u32, cid: u32, iface_ip: Ipv4Addr, tcp_port: u16) -> Vec<u8> {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&[0u8; 12]); // server GUID (placeholder)
+    payload.extend_from_slice(&seq_id.to_le_bytes());
+    payload.extend_from_slice(&search_response_addr(iface_ip));
+    payload.extend_from_slice(&tcp_port.to_le_bytes());
+    encode_size(1, &mut payload); // found channel count
+    payload.extend_from_slice(&cid.to_le_bytes());
+
+    let mut out = encode_header(true, CMD_SEARCH_RESPONSE, payload.len() as u32).to_vec();
+    out.extend_from_slice(&payload);
+    out
+}
+
+fn build_beacon(seq_id: u32, tcp_port: u16) -> Vec<u8> {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&[0u8; 12]); // server GUID placeholder
+    payload.extend_from_slice(&seq_id.to_le_bytes());
+    payload.push(0); // changeCount
+    payload.extend_from_slice(&search_response_addr(Ipv4Addr::UNSPECIFIED));
+    payload.extend_from_slice(&tcp_port.to_le_bytes());
+    let mut out = encode_header(true, CMD_BEACON, payload.len() as u32).to_vec();
+    out.extend_from_slice(&payload);
+    out
+}
+
+fn status_ok() -> Vec<u8> {
+    vec![STATUS_OK_NOMSG]
+}
+
+fn status_error(msg: &str) -> Vec<u8> {
+    let mut out = vec![0x02];
+    encode_string(msg, &mut out);
+    encode_string("", &mut out);
+    out
+}
+
+fn wrap_type_desc(desc: Vec<u8>) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.push(TYPE_CACHE_DEFINE);
+    encode_size(0, &mut out);
+    out.extend_from_slice(&desc);
+    out
+}
+
+fn desc_value_scalar(type_code: u8) -> Vec<u8> {
+    let mut d = Vec::new();
+    d.push(0x80); // structure
+    d.push(0x00); // empty type_id
+    d.push(0x01); // one field
+    encode_string("value", &mut d);
+    d.push(type_code);
+    d
+}
+
+fn desc_value_string_array() -> Vec<u8> {
+    let mut d = Vec::new();
+    d.push(0x80); // structure
+    d.push(0x00); // empty type_id
+    d.push(0x01); // one field
+    encode_string("value", &mut d);
+    d.push(TYPE_STRING | 0x08);
+    d
+}
+
+fn desc_value_enum() -> Vec<u8> {
+    let mut d = Vec::new();
+    d.push(0x80); // structure
+    d.push(0x00); // empty type_id
+    d.push(0x03); // three fields
+
+    encode_string("value", &mut d);
+    d.push(TYPE_INT16);
+
+    encode_string("value.index", &mut d);
+    d.push(TYPE_INT16);
+
+    encode_string("value.choices", &mut d);
+    d.push(TYPE_STRING | 0x08);
+
+    d
+}
+
+fn bitset_value_present() -> Vec<u8> {
+    vec![1, 0b0000_0011]
+}
+
+fn bitset_enum_present() -> Vec<u8> {
+    // root + value + value.index + value.choices
+    vec![1, 0b0000_1111]
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ChannelType {
+    Double,
+    Int32,
+    String,
+    Enum,
+    DoubleArray,
+    Int32Array,
+    StringArray,
+}
+
+#[derive(Clone, Debug)]
+struct ChannelInfo {
+    sid: u32,
+    cid: u32,
+    pv_name: String,
+    ty: ChannelType,
+}
+
+fn detect_channel_type(tx: &channel::Sender<ManagerCommand>, pv_name: &str) -> Option<ChannelType> {
+    let (r_tx, r_rx) = channel::bounded(1);
+    let _ = tx.send(ManagerCommand::FetchDouble {
+        name: pv_name.to_string(),
+        reply: r_tx,
+    });
+    if let Ok(Ok(_)) = r_rx.recv() {
+        return Some(ChannelType::Double);
+    }
+
+    let (r_tx, r_rx) = channel::bounded(1);
+    let _ = tx.send(ManagerCommand::FetchInt32 {
+        name: pv_name.to_string(),
+        reply: r_tx,
+    });
+    if let Ok(Ok(_)) = r_rx.recv() {
+        return Some(ChannelType::Int32);
+    }
+
+    let (r_tx, r_rx) = channel::bounded(1);
+    let _ = tx.send(ManagerCommand::FetchString {
+        name: pv_name.to_string(),
+        reply: r_tx,
+    });
+    if let Ok(Ok(_)) = r_rx.recv() {
+        return Some(ChannelType::String);
+    }
+
+    let (r_tx, r_rx) = channel::bounded(1);
+    let _ = tx.send(ManagerCommand::FetchEnum {
+        name: pv_name.to_string(),
+        reply: r_tx,
+    });
+    if let Ok(Ok(_)) = r_rx.recv() {
+        return Some(ChannelType::Enum);
+    }
+
+    let (r_tx, r_rx) = channel::bounded(1);
+    let _ = tx.send(ManagerCommand::FetchDoubleArray {
+        name: pv_name.to_string(),
+        reply: r_tx,
+    });
+    if let Ok(Ok(_)) = r_rx.recv() {
+        return Some(ChannelType::DoubleArray);
+    }
+
+    let (r_tx, r_rx) = channel::bounded(1);
+    let _ = tx.send(ManagerCommand::FetchInt32Array {
+        name: pv_name.to_string(),
+        reply: r_tx,
+    });
+    if let Ok(Ok(_)) = r_rx.recv() {
+        return Some(ChannelType::Int32Array);
+    }
+
+    let (r_tx, r_rx) = channel::bounded(1);
+    let _ = tx.send(ManagerCommand::FetchStringArray {
+        name: pv_name.to_string(),
+        reply: r_tx,
+    });
+    if let Ok(Ok(_)) = r_rx.recv() {
+        return Some(ChannelType::StringArray);
+    }
+
+    None
+}
+
+fn value_desc_for(ty: ChannelType) -> Vec<u8> {
+    match ty {
+        ChannelType::Double => wrap_type_desc(desc_value_scalar(TYPE_FLOAT64)),
+        ChannelType::Int32 => wrap_type_desc(desc_value_scalar(TYPE_INT32)),
+        ChannelType::String => wrap_type_desc(desc_value_scalar(TYPE_STRING)),
+        ChannelType::Enum => wrap_type_desc(desc_value_enum()),
+        ChannelType::DoubleArray => wrap_type_desc(desc_value_scalar(TYPE_FLOAT64 | 0x08)),
+        ChannelType::Int32Array => wrap_type_desc(desc_value_scalar(TYPE_INT32 | 0x08)),
+        ChannelType::StringArray => wrap_type_desc(desc_value_string_array()),
+    }
+}
+
+fn encode_current_value_payload(tx: &channel::Sender<ManagerCommand>, ch: &ChannelInfo) -> Option<Vec<u8>> {
+    let mut out = if ch.ty == ChannelType::Enum {
+        bitset_enum_present()
+    } else {
+        bitset_value_present()
+    };
+    match ch.ty {
+        ChannelType::Double => {
+            let (r_tx, r_rx) = channel::bounded(1);
+            let _ = tx.send(ManagerCommand::FetchDouble { name: ch.pv_name.clone(), reply: r_tx });
+            let v = r_rx.recv().ok()?.ok()?;
+            out.extend_from_slice(&v.value.to_bits().to_le_bytes());
+        }
+        ChannelType::Int32 => {
+            let (r_tx, r_rx) = channel::bounded(1);
+            let _ = tx.send(ManagerCommand::FetchInt32 { name: ch.pv_name.clone(), reply: r_tx });
+            let v = r_rx.recv().ok()?.ok()?;
+            out.extend_from_slice(&v.value.to_le_bytes());
+        }
+        ChannelType::String => {
+            let (r_tx, r_rx) = channel::bounded(1);
+            let _ = tx.send(ManagerCommand::FetchString { name: ch.pv_name.clone(), reply: r_tx });
+            let v = r_rx.recv().ok()?.ok()?;
+            encode_string(&v.value, &mut out);
+        }
+        ChannelType::Enum => {
+            let (r_tx, r_rx) = channel::bounded(1);
+            let _ = tx.send(ManagerCommand::FetchEnum { name: ch.pv_name.clone(), reply: r_tx });
+            let v = r_rx.recv().ok()?.ok()?;
+            out.extend_from_slice(&v.value.to_le_bytes());
+            out.extend_from_slice(&v.value.to_le_bytes());
+            out.extend_from_slice(&(v.value_choices.len() as u32).to_le_bytes());
+            for choice in v.value_choices {
+                encode_string(&choice, &mut out);
+            }
+        }
+        ChannelType::DoubleArray => {
+            let (r_tx, r_rx) = channel::bounded(1);
+            let _ = tx.send(ManagerCommand::FetchDoubleArray { name: ch.pv_name.clone(), reply: r_tx });
+            let v = r_rx.recv().ok()?.ok()?;
+            out.extend_from_slice(&(v.value.len() as u32).to_le_bytes());
+            for x in &v.value {
+                out.extend_from_slice(&x.to_bits().to_le_bytes());
+            }
+        }
+        ChannelType::Int32Array => {
+            let (r_tx, r_rx) = channel::bounded(1);
+            let _ = tx.send(ManagerCommand::FetchInt32Array { name: ch.pv_name.clone(), reply: r_tx });
+            let v = r_rx.recv().ok()?.ok()?;
+            out.extend_from_slice(&(v.value.len() as u32).to_le_bytes());
+            for x in &v.value {
+                out.extend_from_slice(&x.to_le_bytes());
+            }
+        }
+        ChannelType::StringArray => {
+            let (r_tx, r_rx) = channel::bounded(1);
+            let _ = tx.send(ManagerCommand::FetchStringArray { name: ch.pv_name.clone(), reply: r_tx });
+            let v = r_rx.recv().ok()?.ok()?;
+            out.extend_from_slice(&(v.value.len() as u32).to_le_bytes());
+            for x in &v.value {
+                encode_string(x, &mut out);
+            }
+        }
+    }
+    Some(out)
+}
+
+fn decode_put_and_apply(
+    tx: &channel::Sender<ManagerCommand>,
+    ch: &ChannelInfo,
+    cur: &mut &[u8],
+) -> std::result::Result<(), String> {
+    let bitset_len = decode_size(cur).ok_or_else(|| "PUT missing BitSet size".to_string())?;
+    if cur.len() < bitset_len {
+        return Err("PUT truncated BitSet".to_string());
+    }
+    *cur = &cur[bitset_len..];
+
+    match ch.ty {
+        ChannelType::Double => {
+            if cur.len() < 8 {
+                return Err("PUT double payload too short".to_string());
+            }
+            let bits = u64::from_le_bytes([cur[0], cur[1], cur[2], cur[3], cur[4], cur[5], cur[6], cur[7]]);
+            let value = f64::from_bits(bits);
+            *cur = &cur[8..];
+            if !cur.is_empty() {
+                return Err("PUT payload type mismatch".to_string());
+            }
+            let (r_tx, r_rx) = channel::bounded(1);
+            let _ = tx.send(ManagerCommand::PostDouble { name: ch.pv_name.clone(), value, reply: r_tx });
+            r_rx.recv().map_err(|_| "server worker stopped".to_string())?.map_err(|e| e.to_string())
+        }
+        ChannelType::Int32 => {
+            let value = read_i32_le(cur).ok_or_else(|| "PUT int32 payload too short".to_string())?;
+            if !cur.is_empty() {
+                return Err("PUT payload type mismatch".to_string());
+            }
+            let (r_tx, r_rx) = channel::bounded(1);
+            let _ = tx.send(ManagerCommand::PostInt32 { name: ch.pv_name.clone(), value, reply: r_tx });
+            r_rx.recv().map_err(|_| "server worker stopped".to_string())?.map_err(|e| e.to_string())
+        }
+        ChannelType::String => {
+            let value = decode_string(cur).ok_or_else(|| "PUT string decode failed".to_string())?;
+            if !cur.is_empty() {
+                return Err("PUT payload type mismatch".to_string());
+            }
+            let (r_tx, r_rx) = channel::bounded(1);
+            let _ = tx.send(ManagerCommand::PostString { name: ch.pv_name.clone(), value, reply: r_tx });
+            r_rx.recv().map_err(|_| "server worker stopped".to_string())?.map_err(|e| e.to_string())
+        }
+        ChannelType::Enum => {
+            if cur.len() < 2 {
+                return Err("PUT enum payload too short".to_string());
+            }
+            let value = i16::from_le_bytes([cur[0], cur[1]]);
+            *cur = &cur[2..];
+            if !cur.is_empty() {
+                return Err("PUT payload type mismatch".to_string());
+            }
+            let (r_tx, r_rx) = channel::bounded(1);
+            let _ = tx.send(ManagerCommand::PostEnum { name: ch.pv_name.clone(), value, reply: r_tx });
+            r_rx.recv().map_err(|_| "server worker stopped".to_string())?.map_err(|e| e.to_string())
+        }
+        ChannelType::DoubleArray => {
+            let n = read_u32_le(cur).ok_or_else(|| "PUT double[] missing count".to_string())? as usize;
+            let mut values = Vec::with_capacity(n);
+            for _ in 0..n {
+                if cur.len() < 8 {
+                    return Err("PUT double[] truncated".to_string());
+                }
+                let bits = u64::from_le_bytes([cur[0], cur[1], cur[2], cur[3], cur[4], cur[5], cur[6], cur[7]]);
+                *cur = &cur[8..];
+                values.push(f64::from_bits(bits));
+            }
+            if !cur.is_empty() {
+                return Err("PUT payload type mismatch".to_string());
+            }
+            let (r_tx, r_rx) = channel::bounded(1);
+            let _ = tx.send(ManagerCommand::PostDoubleArray { name: ch.pv_name.clone(), value: values, reply: r_tx });
+            r_rx.recv().map_err(|_| "server worker stopped".to_string())?.map_err(|e| e.to_string())
+        }
+        ChannelType::Int32Array => {
+            let n = read_u32_le(cur).ok_or_else(|| "PUT int32[] missing count".to_string())? as usize;
+            let mut values = Vec::with_capacity(n);
+            for _ in 0..n {
+                let v = read_i32_le(cur).ok_or_else(|| "PUT int32[] truncated".to_string())?;
+                values.push(v);
+            }
+            if !cur.is_empty() {
+                return Err("PUT payload type mismatch".to_string());
+            }
+            let (r_tx, r_rx) = channel::bounded(1);
+            let _ = tx.send(ManagerCommand::PostInt32Array { name: ch.pv_name.clone(), value: values, reply: r_tx });
+            r_rx.recv().map_err(|_| "server worker stopped".to_string())?.map_err(|e| e.to_string())
+        }
+        ChannelType::StringArray => {
+            let n = read_u32_le(cur).ok_or_else(|| "PUT string[] missing count".to_string())? as usize;
+            let mut values = Vec::with_capacity(n);
+            for _ in 0..n {
+                let v = decode_string(cur).ok_or_else(|| "PUT string[] decode failed".to_string())?;
+                values.push(v);
+            }
+            if !cur.is_empty() {
+                return Err("PUT payload type mismatch".to_string());
+            }
+            let (r_tx, r_rx) = channel::bounded(1);
+            let _ = tx.send(ManagerCommand::PostStringArray { name: ch.pv_name.clone(), value: values, reply: r_tx });
+            r_rx.recv().map_err(|_| "server worker stopped".to_string())?.map_err(|e| e.to_string())
+        }
+    }
+}
+
+async fn read_frame(stream: &mut TcpStream) -> std::io::Result<(bool, u8, Vec<u8>)> {
+    let mut hdr = [0u8; 8];
+    stream.read_exact(&mut hdr).await?;
+    let (from_server, cmd, payload_len) = decode_header(&hdr)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "bad pvA header"))?;
+    let mut payload = vec![0u8; payload_len as usize];
+    if payload_len > 0 {
+        stream.read_exact(&mut payload).await?;
+    }
+    Ok((from_server, cmd, payload))
+}
+
+fn make_frame(from_server: bool, cmd: u8, payload: Vec<u8>) -> Vec<u8> {
+    let mut out = encode_header(from_server, cmd, payload.len() as u32).to_vec();
+    out.extend_from_slice(&payload);
+    out
+}
+
+async fn handle_client(mut stream: TcpStream, tx: channel::Sender<ManagerCommand>) -> std::io::Result<()> {
+    let mut validation = Vec::new();
+    validation.extend_from_slice(&(16u32 * 1024 * 1024).to_le_bytes());
+    validation.extend_from_slice(&0x10u16.to_le_bytes());
+    encode_size(1, &mut validation);
+    encode_string("anonymous", &mut validation);
+    stream
+        .write_all(&make_frame(true, CMD_CONNECTION_VALIDATION, validation))
+        .await?;
+
+    loop {
+        let (_, cmd, _) = read_frame(&mut stream).await?;
+        if cmd == CMD_CONNECTION_VALIDATED {
+            break;
+        }
+    }
+
+    use std::collections::HashMap;
+    let mut channels: HashMap<u32, ChannelInfo> = HashMap::new();
+    let mut sid_next: u32 = 1;
+
+    loop {
+        let frame = read_frame(&mut stream).await;
+        let (_, cmd, payload) = match frame {
+            Ok(f) => f,
+            Err(_) => break,
+        };
+
+        match cmd {
+            CMD_CREATE_CHANNEL => {
+                let mut cur = payload.as_slice();
+                if cur.len() < 2 {
+                    continue;
+                }
+                cur = &cur[2..]; // count
+                let cid = match read_u32_le(&mut cur) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                let pv_name = match decode_string(&mut cur) {
+                    Some(s) => s,
+                    None => continue,
+                };
+
+                let mut resp = Vec::new();
+                resp.extend_from_slice(&cid.to_le_bytes());
+                let sid = sid_next;
+                sid_next = sid_next.wrapping_add(1);
+                resp.extend_from_slice(&sid.to_le_bytes());
+
+                if let Some(ty) = detect_channel_type(&tx, &pv_name) {
+                    channels.insert(
+                        sid,
+                        ChannelInfo {
+                            sid,
+                            cid,
+                            pv_name,
+                            ty,
+                        },
+                    );
+                    resp.extend_from_slice(&status_ok());
+                } else {
+                    resp.extend_from_slice(&status_error("PV not found"));
+                }
+                stream
+                    .write_all(&make_frame(true, CMD_CREATE_CHANNEL, resp))
+                    .await?;
+            }
+
+            CMD_GET => {
+                let mut cur = payload.as_slice();
+                let sid = match read_u32_le(&mut cur) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                let ioid = match read_u32_le(&mut cur) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                let subcmd = take_byte(&mut cur).unwrap_or(0);
+
+                let mut resp = Vec::new();
+                resp.extend_from_slice(&ioid.to_le_bytes());
+                resp.push(subcmd);
+
+                if let Some(ch) = channels.get(&sid) {
+                    if subcmd & 0x08 != 0 {
+                        resp.extend_from_slice(&status_ok());
+                        resp.extend_from_slice(&value_desc_for(ch.ty));
+                    } else {
+                        resp.extend_from_slice(&status_ok());
+                        if let Some(vbytes) = encode_current_value_payload(&tx, ch) {
+                            resp.extend_from_slice(&vbytes);
+                        } else {
+                            resp.clear();
+                            resp.extend_from_slice(&ioid.to_le_bytes());
+                            resp.push(subcmd);
+                            resp.extend_from_slice(&status_error("GET fetch failed"));
+                        }
+                    }
+                } else {
+                    resp.extend_from_slice(&status_error("Unknown SID"));
+                }
+
+                stream.write_all(&make_frame(true, CMD_GET, resp)).await?;
+            }
+
+            CMD_PUT => {
+                let mut cur = payload.as_slice();
+                let sid = match read_u32_le(&mut cur) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                let ioid = match read_u32_le(&mut cur) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                let subcmd = take_byte(&mut cur).unwrap_or(0);
+
+                let mut resp = Vec::new();
+                resp.extend_from_slice(&ioid.to_le_bytes());
+                resp.push(subcmd);
+
+                if let Some(ch) = channels.get(&sid) {
+                    if subcmd & 0x08 != 0 {
+                        resp.extend_from_slice(&status_ok());
+                        resp.extend_from_slice(&value_desc_for(ch.ty));
+                    } else {
+                        match decode_put_and_apply(&tx, ch, &mut cur) {
+                            Ok(()) => resp.extend_from_slice(&status_ok()),
+                            Err(msg) => resp.extend_from_slice(&status_error(&msg)),
+                        }
+                    }
+                } else {
+                    resp.extend_from_slice(&status_error("Unknown SID"));
+                }
+
+                stream.write_all(&make_frame(true, CMD_PUT, resp)).await?;
+            }
+
+            CMD_MONITOR => {
+                let mut cur = payload.as_slice();
+                let sid = match read_u32_le(&mut cur) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                let ioid = match read_u32_le(&mut cur) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                let subcmd = take_byte(&mut cur).unwrap_or(0);
+
+                if let Some(ch) = channels.get(&sid) {
+                    if subcmd & 0x08 != 0 {
+                        let mut resp = Vec::new();
+                        resp.extend_from_slice(&ioid.to_le_bytes());
+                        resp.push(subcmd);
+                        resp.extend_from_slice(&status_ok());
+                        resp.extend_from_slice(&value_desc_for(ch.ty));
+                        stream
+                            .write_all(&make_frame(true, CMD_MONITOR, resp))
+                            .await?;
+                    } else if subcmd & 0x04 != 0 {
+                        // START: send one immediate sample.
+                        let mut resp = Vec::new();
+                        resp.extend_from_slice(&ioid.to_le_bytes());
+                        resp.push(0x00);
+                        resp.extend_from_slice(&status_ok());
+                        if let Some(vbytes) = encode_current_value_payload(&tx, ch) {
+                            resp.extend_from_slice(&vbytes);
+                        }
+                        stream
+                            .write_all(&make_frame(true, CMD_MONITOR, resp))
+                            .await?;
+                    }
+                }
+            }
+
+            CMD_DESTROY_REQUEST => {}
+            CMD_DESTROY_CHANNEL => {
+                let mut cur = payload.as_slice();
+                let cid = match read_u32_le(&mut cur) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                let sid = match read_u32_le(&mut cur) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                if let Some(ch) = channels.get(&sid) {
+                    if ch.cid == cid && ch.sid == sid {
+                        channels.remove(&sid);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
 
 // ============================================================================
 // Fetched value types (mirror pvxs-sys exactly)
@@ -93,6 +730,125 @@ pub struct FetchedEnum {
 }
 
 // ============================================================================
+// SharedPV / StaticSource compatibility types
+// ============================================================================
+
+/// Compatibility wrapper mirroring `pvxs-sys::SharedPV`.
+///
+/// In `pvxs-rs`, high-level workflows should continue to use `Server::create_pv_*`.
+/// This type exists to close API-surface parity for lower-level callers.
+#[derive(Debug, Clone, Default)]
+pub struct SharedPV {
+    readonly: bool,
+    value: Option<crate::Value>,
+}
+
+impl SharedPV {
+    pub fn create_mailbox() -> Result<Self> {
+        Ok(Self {
+            readonly: false,
+            value: None,
+        })
+    }
+
+    pub fn create_readonly() -> Result<Self> {
+        Ok(Self {
+            readonly: true,
+            value: None,
+        })
+    }
+
+    pub fn open_double(&mut self, value: f64, _metadata: NTScalarMetadataBuilder) -> Result<()> {
+        self.value = Some(crate::Value::nt_scalar_double(value));
+        Ok(())
+    }
+
+    pub fn open_double_array(
+        &mut self,
+        value: Vec<f64>,
+        _metadata: NTScalarMetadataBuilder,
+    ) -> Result<()> {
+        self.value = Some(crate::Value::nt_scalar_array_double(value));
+        Ok(())
+    }
+
+    pub fn open_int32(&mut self, value: i32, _metadata: NTScalarMetadataBuilder) -> Result<()> {
+        self.value = Some(crate::Value::nt_scalar_int32(value));
+        Ok(())
+    }
+
+    pub fn open_int32_array(
+        &mut self,
+        value: Vec<i32>,
+        _metadata: NTScalarMetadataBuilder,
+    ) -> Result<()> {
+        self.value = Some(crate::Value::nt_scalar_array_int32(value));
+        Ok(())
+    }
+
+    pub fn open_string(
+        &mut self,
+        value: &str,
+        _metadata: NTScalarMetadataBuilder,
+    ) -> Result<()> {
+        self.value = Some(crate::Value::nt_scalar_string(value));
+        Ok(())
+    }
+
+    pub fn open_string_array(
+        &mut self,
+        value: Vec<String>,
+        _metadata: NTScalarMetadataBuilder,
+    ) -> Result<()> {
+        self.value = Some(crate::Value::nt_scalar_array_string(value));
+        Ok(())
+    }
+
+    pub fn open_enum(
+        &mut self,
+        choices: Vec<&str>,
+        selected_index: i16,
+        _metadata: NTEnumMetadataBuilder,
+    ) -> Result<()> {
+        let choices: Vec<String> = choices.into_iter().map(|s| s.to_string()).collect();
+        self.value = Some(crate::Value::nt_enum(selected_index, choices));
+        Ok(())
+    }
+
+    pub fn post(&mut self, value: crate::Value) -> Result<()> {
+        if self.readonly {
+            return Err(PvxsError::new("SharedPV is readonly"));
+        }
+        self.value = Some(value);
+        Ok(())
+    }
+
+    pub fn current(&self) -> Option<crate::Value> {
+        self.value.clone()
+    }
+}
+
+/// Compatibility wrapper mirroring `pvxs-sys::StaticSource`.
+#[derive(Debug, Clone, Default)]
+pub struct StaticSource {
+    pvs: HashMap<String, SharedPV>,
+}
+
+impl StaticSource {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn add(&mut self, name: &str, pv: SharedPV) -> Result<()> {
+        if self.pvs.contains_key(name) {
+            return Err(PvxsError::new(format!("PV '{name}' already exists")));
+        }
+        self.pvs.insert(name.to_string(), pv);
+        Ok(())
+    }
+}
+
+// ============================================================================
 // ServerHandle
 // ============================================================================
 
@@ -123,6 +879,97 @@ impl ServerHandle {
             .map_err(|_| PvxsError::new("server worker stopped"))?;
         rx.recv()
             .map_err(|_| PvxsError::new("server worker stopped"))
+    }
+
+    fn set_readonly(&self, name: &str, readonly: bool) -> Result<()> {
+        let (tx, rx) = channel::bounded(1);
+        self.send(
+            ManagerCommand::SetReadonly {
+                name: name.to_string(),
+                readonly,
+                reply: tx,
+            },
+            rx,
+        )?
+    }
+
+    pub fn add_shared_pv(&self, name: &str, pv: SharedPV) -> Result<()> {
+        let value = pv
+            .current()
+            .ok_or_else(|| PvxsError::new("SharedPV must be opened before adding"))?;
+
+        let value_type = value
+            .type_of("value")
+            .ok_or_else(|| PvxsError::new("SharedPV value missing required 'value' field"))?;
+
+        match value_type {
+            FieldType::Double => {
+                self.create_pv_double(
+                    name,
+                    value.get_field_double("value")?,
+                    NTScalarMetadataBuilder::new(),
+                )?;
+            }
+            FieldType::Int32 => {
+                self.create_pv_int32(
+                    name,
+                    value.get_field_int32("value")?,
+                    NTScalarMetadataBuilder::new(),
+                )?;
+            }
+            FieldType::String => {
+                self.create_pv_string(
+                    name,
+                    &value.get_field_string("value")?,
+                    NTScalarMetadataBuilder::new(),
+                )?;
+            }
+            FieldType::Enum => {
+                let current = value.get_field_enum("value")?;
+                let choices_owned = value.get_field_string_array("value.choices")?;
+                let choices: Vec<&str> = choices_owned.iter().map(|s| s.as_str()).collect();
+                self.create_pv_enum(name, choices, current, NTEnumMetadataBuilder::new())?;
+            }
+            FieldType::DoubleArray => {
+                self.create_pv_double_array(
+                    name,
+                    value.get_field_double_array("value")?,
+                    NTScalarMetadataBuilder::new(),
+                )?;
+            }
+            FieldType::Int32Array => {
+                self.create_pv_int32_array(
+                    name,
+                    value.get_field_int32_array("value")?,
+                    NTScalarMetadataBuilder::new(),
+                )?;
+            }
+            FieldType::StringArray => {
+                self.create_pv_string_array(
+                    name,
+                    value.get_field_string_array("value")?,
+                    NTScalarMetadataBuilder::new(),
+                )?;
+            }
+            FieldType::Int64 | FieldType::Bool => {
+                return Err(PvxsError::new(format!(
+                    "SharedPV type '{value_type:?}' is not supported by server registry"
+                )));
+            }
+        }
+
+        if pv.readonly {
+            self.set_readonly(name, true)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn add_source(&self, source: StaticSource) -> Result<()> {
+        for (name, pv) in source.pvs {
+            self.add_shared_pv(&name, pv)?;
+        }
+        Ok(())
     }
 
     pub fn create_pv_double(
@@ -438,6 +1285,10 @@ impl ServerHandle {
 pub struct Server {
     handle: ServerHandle,
     join: Option<thread::JoinHandle<()>>,
+    beacon_stop_tx: Option<watch::Sender<bool>>,
+    beacon_join: Option<thread::JoinHandle<()>>,
+    udp_join: Option<thread::JoinHandle<()>>,
+    tcp_join: Option<thread::JoinHandle<()>>,
 }
 
 impl Server {
@@ -445,27 +1296,222 @@ impl Server {
     ///
     /// TODO(network): no TCP/UDP port is bound yet; `tcp_port()` returns 0.
     pub fn start_from_env() -> Result<Self> {
-        Self::start_inner()
+        let udp_port = std::env::var("EPICS_PVA_BROADCAST_PORT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5076);
+        let tcp_port = std::env::var("EPICS_PVA_SERVER_PORT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5075);
+        Self::start_inner(udp_port, tcp_port)
     }
 
     /// Start an isolated server (system-assigned ports, ideal for tests).
     ///
     /// TODO(network): no TCP/UDP port is bound yet; `tcp_port()` returns 0.
     pub fn start_isolated() -> Result<Self> {
-        Self::start_inner()
+        Self::start_inner(0, 0)
     }
 
-    fn start_inner() -> Result<Self> {
+    fn start_inner(udp_bind_port: u16, tcp_bind_port: u16) -> Result<Self> {
         let (tx, rx) = channel::unbounded::<ManagerCommand>();
+        let tx_for_tcp = tx.clone();
         let join = thread::spawn(move || run_worker(rx));
+
+        let (beacon_stop_tx, mut beacon_stop_rx) = watch::channel(false);
+        let mut udp_stop_rx = beacon_stop_tx.subscribe();
+        let (udp_ready_tx, udp_ready_rx) = mpsc::channel::<u16>();
+        let tcp_port_shared = Arc::new(AtomicU16::new(0));
+        let tcp_port_for_udp = Arc::clone(&tcp_port_shared);
+
+        let udp_join = thread::spawn(move || {
+            let rt = match tokio::runtime::Builder::new_current_thread()
+                .enable_io()
+                .enable_time()
+                .build()
+            {
+                Ok(rt) => rt,
+                Err(_) => {
+                    let _ = udp_ready_tx.send(0);
+                    return;
+                }
+            };
+
+            rt.block_on(async move {
+                let udp_sock = match if udp_bind_port == 0 {
+                    epics_libcom_rs::net::AsyncUdpV4::bind_ephemeral_same_port(true)
+                } else {
+                    epics_libcom_rs::net::AsyncUdpV4::bind(udp_bind_port, true)
+                } {
+                    Ok(sock) => sock,
+                    Err(_) => {
+                        let _ = udp_ready_tx.send(0);
+                        return;
+                    }
+                };
+                let udp_port = udp_sock
+                    .local_addrs()
+                    .first()
+                    .map(|sa| sa.port())
+                    .unwrap_or(0);
+                let _ = udp_ready_tx.send(udp_port);
+
+                let mut buf = vec![0u8; 4096];
+                loop {
+                    tokio::select! {
+                        changed = udp_stop_rx.changed() => {
+                            if changed.is_err() || *udp_stop_rx.borrow() {
+                                break;
+                            }
+                        }
+                        recv = udp_sock.recv_with_meta(&mut buf) => {
+                            let meta = match recv {
+                                Ok(meta) => meta,
+                                Err(_) => continue,
+                            };
+                            let pkt = &buf[..meta.n];
+                            if pkt.len() < 8 {
+                                continue;
+                            }
+
+                            let hdr: [u8; 8] = [pkt[0], pkt[1], pkt[2], pkt[3], pkt[4], pkt[5], pkt[6], pkt[7]];
+                            let Some((_from_server, cmd, payload_len)) = crate::proto::decode_header(&hdr) else {
+                                continue;
+                            };
+                            if cmd != CMD_SEARCH {
+                                continue;
+                            }
+
+                            let plen = payload_len as usize;
+                            if pkt.len() < 8 + plen {
+                                continue;
+                            }
+                            let payload = &pkt[8..8 + plen];
+                            let Some((seq_id, cid)) = parse_search_request(payload) else {
+                                continue;
+                            };
+
+                            let reply = build_search_response(
+                                seq_id,
+                                cid,
+                                meta.iface_ip,
+                                tcp_port_for_udp.load(Ordering::Relaxed),
+                            );
+                            let _ = udp_sock.send_via(&reply, meta.src, meta.iface_ip).await;
+                        }
+                    }
+                }
+            });
+        });
+
+        let udp_port = udp_ready_rx
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap_or(0);
+
+        let mut tcp_stop_rx = beacon_stop_tx.subscribe();
+        let (tcp_ready_tx, tcp_ready_rx) = mpsc::channel::<u16>();
+        let tcp_join = thread::spawn(move || {
+            let rt = match tokio::runtime::Builder::new_multi_thread()
+                .enable_io()
+                .enable_time()
+                .build()
+            {
+                Ok(rt) => rt,
+                Err(_) => {
+                    let _ = tcp_ready_tx.send(0);
+                    return;
+                }
+            };
+
+            rt.block_on(async move {
+                let bind_addr = format!("0.0.0.0:{tcp_bind_port}");
+                let listener = match TcpListener::bind(&bind_addr).await {
+                    Ok(l) => l,
+                    Err(_) => {
+                        let _ = tcp_ready_tx.send(0);
+                        return;
+                    }
+                };
+                let port = listener.local_addr().ok().map(|a| a.port()).unwrap_or(0);
+                let _ = tcp_ready_tx.send(port);
+
+                loop {
+                    tokio::select! {
+                        changed = tcp_stop_rx.changed() => {
+                            if changed.is_err() || *tcp_stop_rx.borrow() {
+                                break;
+                            }
+                        }
+                        accept = listener.accept() => {
+                            let (stream, _) = match accept {
+                                Ok(v) => v,
+                                Err(_) => continue,
+                            };
+                            let tx = tx_for_tcp.clone();
+                            tokio::spawn(async move {
+                                let _ = handle_client(stream, tx).await;
+                            });
+                        }
+                    }
+                }
+            });
+        });
+
+        let tcp_port = tcp_ready_rx
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap_or(0);
+        tcp_port_shared.store(tcp_port, Ordering::Relaxed);
+
+        let beacon_dest_port = if udp_bind_port == 0 { udp_port } else { udp_bind_port };
+
+        let beacon_join = thread::spawn(move || {
+            let rt = match tokio::runtime::Builder::new_current_thread()
+                .enable_io()
+                .enable_time()
+                .build()
+            {
+                Ok(rt) => rt,
+                Err(_) => return,
+            };
+
+            rt.block_on(async move {
+                let beacon_sock = epics_libcom_rs::net::AsyncUdpV4::bind_ephemeral_same_port(true).ok();
+                let beacon_dest = SocketAddr::V4(SocketAddrV4::new(
+                    Ipv4Addr::new(255, 255, 255, 255),
+                    beacon_dest_port,
+                ));
+                let mut seq_id: u32 = 1;
+                let mut ticker = epics_libcom_rs::runtime::task::interval(Duration::from_secs(15));
+                loop {
+                    tokio::select! {
+                        _ = ticker.tick() => {
+                            if let Some(sock) = &beacon_sock {
+                                let pkt = build_beacon(seq_id, 0);
+                                let _ = sock.fanout_to(&pkt, beacon_dest).await;
+                                seq_id = seq_id.wrapping_add(1);
+                            }
+                        }
+                        changed = beacon_stop_rx.changed() => {
+                            if changed.is_err() || *beacon_stop_rx.borrow() {
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+        });
         Ok(Self {
             handle: ServerHandle {
                 tx,
-                // TODO(network): replace with real bound port
-                tcp_port: 0,
-                udp_port: 0,
+                tcp_port,
+                udp_port,
             },
             join: Some(join),
+            beacon_stop_tx: Some(beacon_stop_tx),
+            beacon_join: Some(beacon_join),
+            udp_join: Some(udp_join),
+            tcp_join: Some(tcp_join),
         })
     }
 
@@ -549,6 +1595,14 @@ impl Server {
             .create_pv_enum(name, choices, selected_index, metadata)
     }
 
+    pub fn add_shared_pv(&self, name: &str, pv: SharedPV) -> Result<()> {
+        self.handle.add_shared_pv(name, pv)
+    }
+
+    pub fn add_source(&self, source: StaticSource) -> Result<()> {
+        self.handle.add_source(source)
+    }
+
     pub fn post_double(&self, name: &str, value: f64) -> Result<()> {
         self.handle.post_double(name, value)
     }
@@ -611,6 +1665,9 @@ impl Server {
 
     /// Stop the server, consuming it and freeing all resources.
     pub fn stop_drop(mut self) -> Result<()> {
+        if let Some(beacon_stop_tx) = self.beacon_stop_tx.take() {
+            let _ = beacon_stop_tx.send(true);
+        }
         let (tx, rx) = channel::bounded(1);
         self.handle
             .tx
@@ -622,12 +1679,25 @@ impl Server {
         if let Some(join) = self.join.take() {
             let _ = join.join();
         }
+        if let Some(join) = self.beacon_join.take() {
+            let _ = join.join();
+        }
+        if let Some(join) = self.udp_join.take() {
+            let _ = join.join();
+        }
+        if let Some(join) = self.tcp_join.take() {
+            let _ = join.join();
+        }
         result
     }
 }
 
 impl Drop for Server {
     fn drop(&mut self) {
+        if let Some(beacon_stop_tx) = self.beacon_stop_tx.take() {
+            let _ = beacon_stop_tx.send(true);
+        }
+
         // If stop_drop was not called, send Stop anyway so the worker exits.
         if self.join.is_some() {
             let (tx, _rx) = channel::bounded(1);
@@ -635,6 +1705,16 @@ impl Drop for Server {
             if let Some(join) = self.join.take() {
                 let _ = join.join();
             }
+        }
+
+        if let Some(join) = self.beacon_join.take() {
+            let _ = join.join();
+        }
+        if let Some(join) = self.udp_join.take() {
+            let _ = join.join();
+        }
+        if let Some(join) = self.tcp_join.take() {
+            let _ = join.join();
         }
     }
 }

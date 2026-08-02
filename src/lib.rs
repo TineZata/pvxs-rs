@@ -51,8 +51,10 @@ pub use metadata::{AlarmMetadata, ControlMetadata, DisplayMetadata};
 pub use server::{
     FetchedDouble, FetchedDoubleArray, FetchedEnum, FetchedInt32, FetchedInt32Array, FetchedString,
     FetchedStringArray, NTEnumMetadataBuilder, NTScalarMetadataBuilder, Server, ServerHandle,
+    SharedPV, StaticSource,
 };
 pub use value::{FieldType, Value};
+pub use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Convenience type alias — every fallible operation in this crate returns this.
 pub type Result<T> = std::result::Result<T, PvxsError>;
@@ -78,3 +80,19 @@ impl fmt::Display for PvxsError {
 }
 
 impl std::error::Error for PvxsError {}
+
+/// Configure logging from environment variables.
+///
+/// The pure-Rust implementation currently does not require explicit logger setup,
+/// so this is a compatibility no-op.
+pub fn configure_logging_from_env() -> Result<()> {
+    Ok(())
+}
+
+/// Set logger level for a specific logger name.
+///
+/// The pure-Rust implementation currently does not expose named loggers,
+/// so this is a compatibility no-op.
+pub fn set_logger_level(_name: &str, _level: &str) -> Result<()> {
+    Ok(())
+}

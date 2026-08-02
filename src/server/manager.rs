@@ -12,6 +12,7 @@ use std::collections::HashMap;
 /// In-memory state for a single managed PV.
 pub(super) enum ManagedPvState {
     Double {
+        readonly: bool,
         value: f64,
         alarm_config: AlarmConfig,
         alarm_severity: AlarmSeverity,
@@ -22,6 +23,7 @@ pub(super) enum ManagedPvState {
         alarm_meta: Option<AlarmMetadata>,
     },
     DoubleArray {
+        readonly: bool,
         value: Vec<f64>,
         alarm_severity: AlarmSeverity,
         alarm_status: AlarmStatus,
@@ -31,6 +33,7 @@ pub(super) enum ManagedPvState {
         alarm_meta: Option<AlarmMetadata>,
     },
     Int32 {
+        readonly: bool,
         value: i32,
         alarm_config: AlarmConfig,
         alarm_severity: AlarmSeverity,
@@ -41,6 +44,7 @@ pub(super) enum ManagedPvState {
         alarm_meta: Option<AlarmMetadata>,
     },
     Int32Array {
+        readonly: bool,
         value: Vec<i32>,
         alarm_severity: AlarmSeverity,
         alarm_status: AlarmStatus,
@@ -50,18 +54,21 @@ pub(super) enum ManagedPvState {
         alarm_meta: Option<AlarmMetadata>,
     },
     Str {
+        readonly: bool,
         value: String,
         alarm_severity: AlarmSeverity,
         alarm_status: AlarmStatus,
         alarm_message: String,
     },
     StrArray {
+        readonly: bool,
         value: Vec<String>,
         alarm_severity: AlarmSeverity,
         alarm_status: AlarmStatus,
         alarm_message: String,
     },
     Enum {
+        readonly: bool,
         value: i16,
         choices: Vec<String>,
         alarm_severity: AlarmSeverity,
@@ -164,6 +171,11 @@ pub enum ManagerCommand {
         name: String,
         reply: channel::Sender<Result<()>>,
     },
+    SetReadonly {
+        name: String,
+        readonly: bool,
+        reply: channel::Sender<Result<()>>,
+    },
     FetchDouble {
         name: String,
         reply: channel::Sender<Result<FetchedDouble>>,
@@ -222,6 +234,7 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                     pvs.insert(
                         name,
                         ManagedPvState::Double {
+                            readonly: false,
                             value: initial,
                             alarm_config,
                             alarm_severity: ar.severity,
@@ -251,6 +264,7 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                     pvs.insert(
                         name,
                         ManagedPvState::DoubleArray {
+                            readonly: false,
                             value: initial,
                             alarm_severity: AlarmSeverity::NoAlarm,
                             alarm_status: AlarmStatus::NoAlarm,
@@ -279,6 +293,7 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                     pvs.insert(
                         name,
                         ManagedPvState::Int32 {
+                            readonly: false,
                             value: initial,
                             alarm_config,
                             alarm_severity: ar.severity,
@@ -308,6 +323,7 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                     pvs.insert(
                         name,
                         ManagedPvState::Int32Array {
+                            readonly: false,
                             value: initial,
                             alarm_severity: AlarmSeverity::NoAlarm,
                             alarm_status: AlarmStatus::NoAlarm,
@@ -334,6 +350,7 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                     pvs.insert(
                         name,
                         ManagedPvState::Str {
+                            readonly: false,
                             value: initial,
                             alarm_severity: AlarmSeverity::NoAlarm,
                             alarm_status: AlarmStatus::NoAlarm,
@@ -359,6 +376,7 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                     pvs.insert(
                         name,
                         ManagedPvState::StrArray {
+                            readonly: false,
                             value: initial,
                             alarm_severity: AlarmSeverity::NoAlarm,
                             alarm_status: AlarmStatus::NoAlarm,
@@ -387,6 +405,7 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                     pvs.insert(
                         name,
                         ManagedPvState::Enum {
+                            readonly: false,
                             value: selected_index,
                             choices,
                             alarm_severity: AlarmSeverity::NoAlarm,
@@ -405,6 +424,7 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                 let result = match pvs.get_mut(&name) {
                     None => Err(PvxsError::new(format!("PV '{}' not found", name))),
                     Some(ManagedPvState::Double {
+                        readonly,
                         value: stored,
                         alarm_config,
                         alarm_severity,
@@ -412,6 +432,9 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                         alarm_message,
                         ..
                     }) => {
+                        if *readonly {
+                            Err(PvxsError::new(format!("PV '{}' is readonly", name)))
+                        } else {
                         let ar = compute_alarm_for_scalar(value, alarm_config);
                         if !ar.allow {
                             Err(PvxsError::new(ar.message))
@@ -422,6 +445,7 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                             *alarm_message = ar.message;
                             Ok(())
                         }
+                        }
                     }
                     Some(_) => Err(PvxsError::new(format!("PV '{}' is not a double", name))),
                 };
@@ -431,9 +455,17 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
             ManagerCommand::PostDoubleArray { name, value, reply } => {
                 let result = match pvs.get_mut(&name) {
                     None => Err(PvxsError::new(format!("PV '{}' not found", name))),
-                    Some(ManagedPvState::DoubleArray { value: stored, .. }) => {
-                        *stored = value;
-                        Ok(())
+                    Some(ManagedPvState::DoubleArray {
+                        readonly,
+                        value: stored,
+                        ..
+                    }) => {
+                        if *readonly {
+                            Err(PvxsError::new(format!("PV '{}' is readonly", name)))
+                        } else {
+                            *stored = value;
+                            Ok(())
+                        }
                     }
                     Some(_) => Err(PvxsError::new(format!(
                         "PV '{}' is not a double array",
@@ -447,6 +479,7 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                 let result = match pvs.get_mut(&name) {
                     None => Err(PvxsError::new(format!("PV '{}' not found", name))),
                     Some(ManagedPvState::Int32 {
+                        readonly,
                         value: stored,
                         alarm_config,
                         alarm_severity,
@@ -454,6 +487,9 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                         alarm_message,
                         ..
                     }) => {
+                        if *readonly {
+                            Err(PvxsError::new(format!("PV '{}' is readonly", name)))
+                        } else {
                         let ar = compute_alarm_for_scalar(value as f64, alarm_config);
                         if !ar.allow {
                             Err(PvxsError::new(ar.message))
@@ -464,6 +500,7 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                             *alarm_message = ar.message;
                             Ok(())
                         }
+                        }
                     }
                     Some(_) => Err(PvxsError::new(format!("PV '{}' is not an int32", name))),
                 };
@@ -473,9 +510,17 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
             ManagerCommand::PostInt32Array { name, value, reply } => {
                 let result = match pvs.get_mut(&name) {
                     None => Err(PvxsError::new(format!("PV '{}' not found", name))),
-                    Some(ManagedPvState::Int32Array { value: stored, .. }) => {
-                        *stored = value;
-                        Ok(())
+                    Some(ManagedPvState::Int32Array {
+                        readonly,
+                        value: stored,
+                        ..
+                    }) => {
+                        if *readonly {
+                            Err(PvxsError::new(format!("PV '{}' is readonly", name)))
+                        } else {
+                            *stored = value;
+                            Ok(())
+                        }
                     }
                     Some(_) => Err(PvxsError::new(format!(
                         "PV '{}' is not an int32 array",
@@ -488,9 +533,17 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
             ManagerCommand::PostString { name, value, reply } => {
                 let result = match pvs.get_mut(&name) {
                     None => Err(PvxsError::new(format!("PV '{}' not found", name))),
-                    Some(ManagedPvState::Str { value: stored, .. }) => {
-                        *stored = value;
-                        Ok(())
+                    Some(ManagedPvState::Str {
+                        readonly,
+                        value: stored,
+                        ..
+                    }) => {
+                        if *readonly {
+                            Err(PvxsError::new(format!("PV '{}' is readonly", name)))
+                        } else {
+                            *stored = value;
+                            Ok(())
+                        }
                     }
                     Some(_) => Err(PvxsError::new(format!("PV '{}' is not a string", name))),
                 };
@@ -500,9 +553,17 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
             ManagerCommand::PostStringArray { name, value, reply } => {
                 let result = match pvs.get_mut(&name) {
                     None => Err(PvxsError::new(format!("PV '{}' not found", name))),
-                    Some(ManagedPvState::StrArray { value: stored, .. }) => {
-                        *stored = value;
-                        Ok(())
+                    Some(ManagedPvState::StrArray {
+                        readonly,
+                        value: stored,
+                        ..
+                    }) => {
+                        if *readonly {
+                            Err(PvxsError::new(format!("PV '{}' is readonly", name)))
+                        } else {
+                            *stored = value;
+                            Ok(())
+                        }
                     }
                     Some(_) => Err(PvxsError::new(format!(
                         "PV '{}' is not a string array",
@@ -516,11 +577,14 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                 let result = match pvs.get_mut(&name) {
                     None => Err(PvxsError::new(format!("PV '{}' not found", name))),
                     Some(ManagedPvState::Enum {
+                        readonly,
                         value: stored,
                         choices,
                         ..
                     }) => {
-                        if value as usize >= choices.len() {
+                        if *readonly {
+                            Err(PvxsError::new(format!("PV '{}' is readonly", name)))
+                        } else if value as usize >= choices.len() {
                             Err(PvxsError::new("enum index out of range"))
                         } else {
                             *stored = value;
@@ -539,6 +603,45 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                     Ok(())
                 } else {
                     Err(PvxsError::new(format!("PV '{}' not found", name)))
+                };
+                let _ = reply.send(result);
+            }
+
+            ManagerCommand::SetReadonly {
+                name,
+                readonly,
+                reply,
+            } => {
+                let result = match pvs.get_mut(&name) {
+                    Some(ManagedPvState::Double { readonly: r, .. }) => {
+                        *r = readonly;
+                        Ok(())
+                    }
+                    Some(ManagedPvState::DoubleArray { readonly: r, .. }) => {
+                        *r = readonly;
+                        Ok(())
+                    }
+                    Some(ManagedPvState::Int32 { readonly: r, .. }) => {
+                        *r = readonly;
+                        Ok(())
+                    }
+                    Some(ManagedPvState::Int32Array { readonly: r, .. }) => {
+                        *r = readonly;
+                        Ok(())
+                    }
+                    Some(ManagedPvState::Str { readonly: r, .. }) => {
+                        *r = readonly;
+                        Ok(())
+                    }
+                    Some(ManagedPvState::StrArray { readonly: r, .. }) => {
+                        *r = readonly;
+                        Ok(())
+                    }
+                    Some(ManagedPvState::Enum { readonly: r, .. }) => {
+                        *r = readonly;
+                        Ok(())
+                    }
+                    None => Err(PvxsError::new(format!("PV '{}' not found", name))),
                 };
                 let _ = reply.send(result);
             }
@@ -604,6 +707,7 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                         alarm_severity,
                         alarm_status,
                         alarm_message,
+                        ..
                     }) => Ok(FetchedString {
                         value: value.clone(),
                         alarm_severity: *alarm_severity,
@@ -626,6 +730,7 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                         display,
                         control,
                         alarm_meta,
+                        ..
                     }) => Ok(FetchedDoubleArray {
                         value: value.clone(),
                         alarm_severity: *alarm_severity,
@@ -654,6 +759,7 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                         display,
                         control,
                         alarm_meta,
+                        ..
                     }) => Ok(FetchedInt32Array {
                         value: value.clone(),
                         alarm_severity: *alarm_severity,
@@ -679,6 +785,7 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                         alarm_severity,
                         alarm_status,
                         alarm_message,
+                        ..
                     }) => Ok(FetchedStringArray {
                         value: value.clone(),
                         alarm_severity: *alarm_severity,
@@ -702,6 +809,7 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                         alarm_severity,
                         alarm_status,
                         alarm_message,
+                        ..
                     }) => Ok(FetchedEnum {
                         value: *value,
                         value_choices: choices.clone(),

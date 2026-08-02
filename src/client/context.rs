@@ -39,6 +39,14 @@ impl Context {
         crate::net::blocking_get(&self._config, &self._rt, pv_name, timeout)
     }
 
+    /// Get type/field information about a process variable.
+    ///
+    /// In the pure-Rust backend this currently shares the same transport path
+    /// as `get()` and returns the current value payload.
+    pub fn info(&mut self, pv_name: &str, timeout: f64) -> Result<Value> {
+        self.get(pv_name, timeout)
+    }
+
     // ── PUT ─────────────────────────────────────────────────────────────────
 
     /// Perform a synchronous PUT with a double value.
@@ -129,14 +137,22 @@ impl Context {
     ///
     /// TODO(network): pvAccess TCP transport not yet implemented.
     pub fn monitor(&mut self, pv_name: &str) -> Result<Monitor> {
-        Ok(Monitor::new(pv_name.to_string()))
+        Ok(Monitor::new(
+            pv_name.to_string(),
+            self._rt.handle().clone(),
+            self._config.clone(),
+        ))
     }
 
     /// Create a [`MonitorBuilder`] for advanced monitor configuration.
     ///
     /// TODO(network): pvAccess TCP transport not yet implemented.
     pub fn monitor_builder(&mut self, pv_name: &str) -> Result<MonitorBuilder> {
-        Ok(MonitorBuilder::new(pv_name.to_string()))
+        Ok(MonitorBuilder::new(
+            pv_name.to_string(),
+            self._rt.handle().clone(),
+            self._config.clone(),
+        ))
     }
 
     // ── RPC ──────────────────────────────────────────────────────────────────
@@ -151,3 +167,27 @@ impl Context {
 
 unsafe impl Send for Context {}
 unsafe impl Sync for Context {}
+
+/// Async parity surface with `pvxs-sys`.
+#[cfg(feature = "async")]
+impl Context {
+    /// Asynchronously perform a GET operation.
+    pub async fn get_async(&mut self, pv_name: &str, timeout: f64) -> Result<Value> {
+        self.get(pv_name, timeout)
+    }
+
+    /// Asynchronously perform a double PUT operation.
+    pub async fn put_double_async(
+        &mut self,
+        pv_name: &str,
+        value: f64,
+        timeout: f64,
+    ) -> Result<()> {
+        self.put_double(pv_name, value, timeout)
+    }
+
+    /// Asynchronously fetch field/type information.
+    pub async fn info_async(&mut self, pv_name: &str, timeout: f64) -> Result<Value> {
+        self.info(pv_name, timeout)
+    }
+}

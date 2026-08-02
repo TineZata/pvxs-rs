@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
+use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 
 use crate::client::ClientConfig;
@@ -78,6 +79,31 @@ fn build_put_init(sid: u32, ioid: u32) -> Vec<u8> {
     p.push(0x08); // subcmd = INIT
     p.extend_from_slice(build_pv_request_all());
     frame(false, CMD_PUT, p)
+}
+
+fn build_monitor_init(sid: u32, ioid: u32) -> Vec<u8> {
+    let mut p = Vec::new();
+    p.extend_from_slice(&sid.to_le_bytes());
+    p.extend_from_slice(&ioid.to_le_bytes());
+    p.push(0x08); // subcmd = INIT
+    p.extend_from_slice(build_pv_request_all());
+    frame(false, CMD_MONITOR, p)
+}
+
+fn build_monitor_start(sid: u32, ioid: u32) -> Vec<u8> {
+    let mut p = Vec::new();
+    p.extend_from_slice(&sid.to_le_bytes());
+    p.extend_from_slice(&ioid.to_le_bytes());
+    p.push(0x44); // subcmd = START (pipeline bit included)
+    frame(false, CMD_MONITOR, p)
+}
+
+fn build_monitor_stop(sid: u32, ioid: u32) -> Vec<u8> {
+    let mut p = Vec::new();
+    p.extend_from_slice(&sid.to_le_bytes());
+    p.extend_from_slice(&ioid.to_le_bytes());
+    p.push(0x40); // subcmd = STOP
+    frame(false, CMD_MONITOR, p)
 }
 
 fn build_destroy_request(sid: u32, ioid: u32) -> Vec<u8> {
@@ -312,6 +338,276 @@ pub enum PutValue<'a> {
     DoubleArray(Vec<f64>),
     Int32Array(Vec<i32>),
     StringArray(Vec<String>),
+}
+
+/// Monitor-stream events emitted by the network task.
+#[derive(Debug)]
+pub enum MonitorNetEvent {
+    Connected,
+    Disconnected(String),
+    Value(Value),
+    RemoteError(String),
+    ClientError(String),
+    Finished,
+}
+
+/// Handle for an active pvAccess monitor session.
+pub struct MonitorSession {
+    stop_tx: Option<oneshot::Sender<()>>,
+}
+
+impl MonitorSession {
+    pub fn stop(&mut self) {
+        if let Some(tx) = self.stop_tx.take() {
+            let _ = tx.send(());
+        }
+    }
+}
+
+impl Drop for MonitorSession {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+async fn pva_monitor_task(
+    config: ClientConfig,
+    pv_name: String,
+    timeout_secs: f64,
+    mut stop_rx: oneshot::Receiver<()>,
+    tx: mpsc::UnboundedSender<MonitorNetEvent>,
+) {
+    let op_timeout = Duration::from_secs_f64(timeout_secs.clamp(0.1, 300.0));
+
+    let server = match timeout(op_timeout, search(&config, &pv_name)).await {
+        Ok(Ok(server)) => server,
+        Ok(Err(err)) => {
+            let _ = tx.send(MonitorNetEvent::ClientError(err.to_string()));
+            return;
+        }
+        Err(_) => {
+            let _ = tx.send(MonitorNetEvent::ClientError(format!(
+                "search timeout: '{}' not found",
+                pv_name
+            )));
+            return;
+        }
+    };
+
+    let mut stream = match timeout(Duration::from_secs(5), TcpStream::connect(server)).await {
+        Ok(Ok(stream)) => stream,
+        Ok(Err(err)) => {
+            let _ = tx.send(MonitorNetEvent::ClientError(format!("TCP connect: {err}")));
+            return;
+        }
+        Err(_) => {
+            let _ = tx.send(MonitorNetEvent::ClientError("TCP connect timeout".to_string()));
+            return;
+        }
+    };
+
+    let read_validation = timeout(op_timeout, expect_frame(&mut stream, CMD_CONNECTION_VALIDATION)).await;
+    if read_validation.is_err() {
+        let _ = tx.send(MonitorNetEvent::ClientError(
+            "timeout waiting for CONNECTION_VALIDATION".to_string(),
+        ));
+        return;
+    }
+    if let Ok(Err(err)) = read_validation {
+        let _ = tx.send(MonitorNetEvent::ClientError(format!(
+            "read CONNECTION_VALIDATION: {err}"
+        )));
+        return;
+    }
+
+    if let Err(err) = stream.write_all(&build_connection_validated()).await {
+        let _ = tx.send(MonitorNetEvent::ClientError(format!(
+            "write CONNECTION_VALIDATED: {err}"
+        )));
+        return;
+    }
+
+    let cid: u32 = 1;
+    let ioid: u32 = 1;
+    if let Err(err) = stream.write_all(&build_create_channel(cid, &pv_name)).await {
+        let _ = tx.send(MonitorNetEvent::ClientError(format!("write CREATE_CHANNEL: {err}")));
+        return;
+    }
+
+    let cc = match timeout(op_timeout, expect_frame(&mut stream, CMD_CREATE_CHANNEL)).await {
+        Ok(Ok(payload)) => payload,
+        Ok(Err(err)) => {
+            let _ = tx.send(MonitorNetEvent::ClientError(format!(
+                "read CREATE_CHANNEL response: {err}"
+            )));
+            return;
+        }
+        Err(_) => {
+            let _ = tx.send(MonitorNetEvent::ClientError(format!(
+                "timeout waiting for CREATE_CHANNEL response for '{}'",
+                pv_name
+            )));
+            return;
+        }
+    };
+
+    let mut cur = cc.as_slice();
+    let _rcid = match read_u32_le(&mut cur) {
+        Some(v) => v,
+        None => {
+            let _ = tx.send(MonitorNetEvent::ClientError(
+                "CREATE_CHANNEL response truncated (cid)".to_string(),
+            ));
+            return;
+        }
+    };
+    let sid = match read_u32_le(&mut cur) {
+        Some(v) => v,
+        None => {
+            let _ = tx.send(MonitorNetEvent::ClientError(
+                "CREATE_CHANNEL response truncated (sid)".to_string(),
+            ));
+            return;
+        }
+    };
+    if !decode_status(&mut cur) {
+        let _ = tx.send(MonitorNetEvent::RemoteError(format!(
+            "server rejected CREATE_CHANNEL for '{}'",
+            pv_name
+        )));
+        return;
+    }
+
+    if let Err(err) = stream.write_all(&build_monitor_init(sid, ioid)).await {
+        let _ = tx.send(MonitorNetEvent::ClientError(format!("write MONITOR INIT: {err}")));
+        return;
+    }
+
+    let mi = match timeout(op_timeout, expect_frame(&mut stream, CMD_MONITOR)).await {
+        Ok(Ok(payload)) => payload,
+        Ok(Err(err)) => {
+            let _ = tx.send(MonitorNetEvent::ClientError(format!(
+                "read MONITOR INIT response: {err}"
+            )));
+            return;
+        }
+        Err(_) => {
+            let _ = tx.send(MonitorNetEvent::ClientError(
+                "timeout waiting for MONITOR INIT response".to_string(),
+            ));
+            return;
+        }
+    };
+
+    let mut cur = mi.as_slice();
+    let _rioid = match read_u32_le(&mut cur) {
+        Some(v) => v,
+        None => {
+            let _ = tx.send(MonitorNetEvent::ClientError(
+                "MONITOR INIT response: missing ioid".to_string(),
+            ));
+            return;
+        }
+    };
+    let _subcmd = take_byte(&mut cur);
+    if !decode_status(&mut cur) {
+        let _ = tx.send(MonitorNetEvent::RemoteError(format!(
+            "MONITOR INIT failed for '{}'",
+            pv_name
+        )));
+        return;
+    }
+    let desc = match decode_field_desc_cached(&mut cur) {
+        Some(desc) => desc,
+        None => {
+            let _ = tx.send(MonitorNetEvent::ClientError(format!(
+                "could not parse FieldDesc from MONITOR INIT for '{}'",
+                pv_name
+            )));
+            return;
+        }
+    };
+
+    if let Err(err) = stream.write_all(&build_monitor_start(sid, ioid)).await {
+        let _ = tx.send(MonitorNetEvent::ClientError(format!("write MONITOR START: {err}")));
+        return;
+    }
+    let _ = tx.send(MonitorNetEvent::Connected);
+
+    loop {
+        tokio::select! {
+            _ = &mut stop_rx => {
+                let _ = stream.write_all(&build_monitor_stop(sid, ioid)).await;
+                let _ = stream.write_all(&build_destroy_request(sid, ioid)).await;
+                let _ = stream.write_all(&build_destroy_channel(cid, sid)).await;
+                let _ = tx.send(MonitorNetEvent::Finished);
+                break;
+            }
+            read = read_frame(&mut stream) => {
+                let (_, cmd, payload) = match read {
+                    Ok(frame) => frame,
+                    Err(err) => {
+                        let _ = tx.send(MonitorNetEvent::Disconnected(format!("monitor stream closed: {err}")));
+                        break;
+                    }
+                };
+
+                if cmd != CMD_MONITOR {
+                    continue;
+                }
+
+                let mut cur = payload.as_slice();
+                let _rioid = match read_u32_le(&mut cur) {
+                    Some(v) => v,
+                    None => {
+                        let _ = tx.send(MonitorNetEvent::ClientError("MONITOR frame: missing ioid".to_string()));
+                        continue;
+                    }
+                };
+                let _subcmd = take_byte(&mut cur);
+                if !decode_status(&mut cur) {
+                    let _ = tx.send(MonitorNetEvent::RemoteError(format!("MONITOR data failed for '{}'", pv_name)));
+                    continue;
+                }
+
+                let bits = match read_bitset(&mut cur) {
+                    Some(bits) => bits.to_vec(),
+                    None => {
+                        let _ = tx.send(MonitorNetEvent::ClientError("MONITOR data: could not read BitSet".to_string()));
+                        continue;
+                    }
+                };
+
+                let mut value = Value::new();
+                let mut bit_counter: usize = 0;
+                if decode_into_value(&mut cur, &desc, &bits, &mut bit_counter, "", &mut value).is_none() {
+                    let _ = tx.send(MonitorNetEvent::ClientError(format!(
+                        "failed to decode monitor payload for '{}'",
+                        pv_name
+                    )));
+                    continue;
+                }
+                let _ = tx.send(MonitorNetEvent::Value(value));
+            }
+        }
+    }
+}
+
+pub fn start_monitor(
+    config: ClientConfig,
+    rt: tokio::runtime::Handle,
+    pv_name: String,
+    timeout_secs: f64,
+) -> Result<(MonitorSession, mpsc::UnboundedReceiver<MonitorNetEvent>)> {
+    let (stop_tx, stop_rx) = oneshot::channel();
+    let (tx, rx) = mpsc::unbounded_channel();
+    rt.spawn(pva_monitor_task(config, pv_name, timeout_secs, stop_rx, tx));
+    Ok((
+        MonitorSession {
+            stop_tx: Some(stop_tx),
+        },
+        rx,
+    ))
 }
 
 async fn pva_put_inner(
