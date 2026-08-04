@@ -1,3 +1,5 @@
+// Copyright 2026 Tine Zata
+// SPDX-License-Identifier: MPL-2.0
 use crate::{PvxsError, Result};
 
 use crate::alarms::{AlarmSeverity, AlarmStatus, AlarmConfig,

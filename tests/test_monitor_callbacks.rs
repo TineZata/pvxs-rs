@@ -1,3 +1,5 @@
+// Copyright 2026 Tine Zata
+// SPDX-License-Identifier: MPL-2.0
 use pvxs::{Context, MonitorEvent, NTScalarMetadataBuilder, Server};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::sync::atomic::{AtomicUsize, Ordering};

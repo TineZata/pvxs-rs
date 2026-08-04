@@ -1,3 +1,5 @@
+// Copyright 2026 Tine Zata
+// SPDX-License-Identifier: MPL-2.0
 use std::time::{SystemTime, UNIX_EPOCH};
 /// Builder for NTEnum PV metadata.
 ///

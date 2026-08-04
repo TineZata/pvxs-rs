@@ -1,3 +1,5 @@
+// Copyright 2026 Tine Zata
+// SPDX-License-Identifier: MPL-2.0
 use std::collections::{HashMap, VecDeque};
 use crate::client::ClientConfig;
 use crate::{PvxsError, Result, Value};

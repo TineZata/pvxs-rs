@@ -1,3 +1,5 @@
+// Copyright 2026 Tine Zata
+// SPDX-License-Identifier: MPL-2.0
 use crate::{PvxsError, Result, Value};
 use crate::client::{Monitor, MonitorBuilder, Rpc};
 use crate::client::config::ClientConfig;

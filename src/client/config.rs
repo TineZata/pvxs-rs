@@ -1,3 +1,5 @@
+// Copyright 2026 Tine Zata
+// SPDX-License-Identifier: MPL-2.0
 /// Network client configuration derived from environment variables.
 #[derive(Debug, Clone, Default)]
 pub struct ClientConfig {

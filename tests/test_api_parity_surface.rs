@@ -1,3 +1,5 @@
+// Copyright 2026 Tine Zata
+// SPDX-License-Identifier: MPL-2.0
 use pvxs::{
     configure_logging_from_env, set_logger_level, Context, NTEnumMetadataBuilder,
     NTScalarMetadataBuilder, Server, SharedPV, StaticSource,
