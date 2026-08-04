@@ -13,7 +13,7 @@ fn test_pv_local_fetch_post() {
     let fetched = server.fetch_int32(name).expect("fetch initial");
     assert_eq!(fetched.value, initial_value);
 
-    assert!(server.post_double(name, 3.14).is_err());
+    assert!(server.post_double(name, std::f64::consts::PI).is_err());
     assert!(server.post_string(name, "invalid").is_err());
 
     let new_value = 200;

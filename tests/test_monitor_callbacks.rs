@@ -184,13 +184,11 @@ fn test_monitor_multiple_client_monitors() {
     let mut masked_connected = false;
     let mut enabled_connected = false;
     for _ in 0..20 {
-        match mon_masked.pop() {
-            Err(MonitorEvent::Connected(_)) => masked_connected = true,
-            _ => {}
+        if let Err(MonitorEvent::Connected(_)) = mon_masked.pop() {
+            masked_connected = true;
         }
-        match mon_enabled.pop() {
-            Err(MonitorEvent::Connected(_)) => enabled_connected = true,
-            _ => {}
+        if let Err(MonitorEvent::Connected(_)) = mon_enabled.pop() {
+            enabled_connected = true;
         }
     }
 

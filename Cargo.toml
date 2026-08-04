@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2021"
 description = "Pure-Rust pvAccess implementation with the same public API as pvxs-sys — no C++ toolchain, no EPICS_BASE, no DLLs."
 license = "MPL-2.0"
-# repository = ""
+repository = "https://github.com/epics-rs/pvxs-rs"
+keywords = ["epics", "pvaccess", "pvxs", "network", "rust"]
+categories = ["network-programming", "science"]
 
 [dependencies]
 crossbeam-channel = "0.5"

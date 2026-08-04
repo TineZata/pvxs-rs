@@ -242,7 +242,7 @@ fn test_monitor_error_after_stop() {
     let pv_name = "test:stop:error";
     let server = Server::start_isolated().expect("start server");
     server
-        .create_pv_double(pv_name, 3.14, NTScalarMetadataBuilder::new())
+        .create_pv_double(pv_name, std::f64::consts::PI, NTScalarMetadataBuilder::new())
         .expect("create pv");
 
     let mut ctx = setup_client_for(&server);

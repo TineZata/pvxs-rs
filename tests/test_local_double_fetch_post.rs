@@ -2,7 +2,7 @@ use pvxs::{NTScalarMetadataBuilder, Server};
 
 #[test]
 fn test_pv_local_double_fetch_post() {
-    let initial_value = 3.14159;
+    let initial_value = std::f64::consts::PI;
     let name = "loc:double";
     let server = Server::start_isolated().expect("start isolated server");
 
@@ -19,7 +19,7 @@ fn test_pv_local_double_fetch_post() {
     let fetched = server.fetch_double(name).expect("fetch after invalid posts");
     assert_eq!(fetched.value, initial_value);
 
-    let new_value = 2.71828;
+    let new_value = std::f64::consts::E;
     server.post_double(name, new_value).expect("post double");
     let fetched = server.fetch_double(name).expect("fetch posted");
     assert_eq!(fetched.value, new_value);

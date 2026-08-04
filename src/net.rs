@@ -197,7 +197,7 @@ async fn search(config: &ClientConfig, pv_name: &str) -> Result<SocketAddr> {
 
         let server_ip = if addr_bytes == [0u8; 16] {
             from.ip()
-        } else if &addr_bytes[..12] == &[0u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF] {
+        } else if addr_bytes[..12] == [0u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF] {
             IpAddr::V4(Ipv4Addr::new(addr_bytes[12], addr_bytes[13], addr_bytes[14], addr_bytes[15]))
         } else {
             IpAddr::V6(std::net::Ipv6Addr::from(addr_bytes))
@@ -306,7 +306,7 @@ fn encode_put_payload(put_value: &PutValue) -> Vec<u8> {
         PutValue::Double(v) => p.extend_from_slice(&v.to_bits().to_le_bytes()),
         PutValue::Int32(v) => p.extend_from_slice(&v.to_le_bytes()),
         PutValue::String(s) => encode_string(s, &mut p),
-        PutValue::Enum(v) => p.extend_from_slice(&(*v as i16).to_le_bytes()),
+        PutValue::Enum(v) => p.extend_from_slice(&(v.to_le_bytes())),
         PutValue::DoubleArray(values) => {
             p.extend_from_slice(&(values.len() as u32).to_le_bytes());
             for value in values {
@@ -698,8 +698,7 @@ pub fn blocking_get(
     let op_timeout = Duration::from_secs_f64(timeout_secs.clamp(0.1, 300.0));
     rt.block_on(async {
         let server = timeout(op_timeout, search(config, pv_name)).await
-            .map_err(|_| PvxsError::new(format!("search timeout: '{pv_name}' not found on the network")))?
-            .map_err(|e| e)?;
+            .map_err(|_| PvxsError::new(format!("search timeout: '{pv_name}' not found on the network")))??;
         pva_get_inner(server, pv_name, op_timeout).await
     })
 }
@@ -714,8 +713,7 @@ pub fn blocking_put(
     let op_timeout = Duration::from_secs_f64(timeout_secs.clamp(0.1, 300.0));
     rt.block_on(async {
         let server = timeout(op_timeout, search(config, pv_name)).await
-            .map_err(|_| PvxsError::new(format!("search timeout: '{pv_name}' not found")))?
-            .map_err(|e| e)?;
+            .map_err(|_| PvxsError::new(format!("search timeout: '{pv_name}' not found")))??;
         pva_put_inner(server, pv_name, put_value, op_timeout).await
     })
 }

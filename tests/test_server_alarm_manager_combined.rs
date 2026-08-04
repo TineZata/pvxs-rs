@@ -104,11 +104,10 @@ fn test_alarm_transitions() {
     ] {
         server.post_double(pv, v).expect("post transition value");
         thread::sleep(Duration::from_millis(40));
-        if let Some(got) = ctx
+        if let Ok(got) = ctx
             .get(pv, 2.0)
             .expect("get transition value")
             .get_field_int32("alarm.severity")
-            .ok()
         {
             assert_eq!(got, expected as i32);
         }
@@ -174,11 +173,10 @@ fn test_boundary_alarm_conditions() {
     for v in [10.0, 20.0, 15.0] {
         server.post_double(pv, v).expect("post boundary value");
         thread::sleep(Duration::from_millis(40));
-        if let Some(status) = ctx
+        if let Ok(status) = ctx
             .get(pv, 2.0)
             .expect("get boundary value")
             .get_field_int32("alarm.status")
-            .ok()
         {
             assert_eq!(status, AlarmStatus::DeviceStatus as i32);
         }

@@ -24,7 +24,7 @@ fn setup_client_for(server: &Server) -> Context {
 fn test_pv_remote_double_get_put() {
     let _guard = lock_env();
     let timeout = 2.0;
-    let initial_value = 3.14159;
+    let initial_value = std::f64::consts::PI;
     let name = "remote:double";
 
     let server = Server::start_isolated().expect("start server");
@@ -45,7 +45,7 @@ fn test_pv_remote_double_get_put() {
         .expect("recreate pv");
 
     let mut ctx = setup_client_for(&server);
-    let new_value = 2.71828;
+    let new_value = std::f64::consts::E;
     ctx.put_double(name, new_value, timeout).expect("put double");
     let second = ctx.get(name, timeout).expect("second get");
     assert_eq!(second.get_field_double("value").expect("value"), new_value);

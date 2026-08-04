@@ -2,7 +2,7 @@ use pvxs::{NTScalarMetadataBuilder, Server};
 
 #[test]
 fn test_pv_local_double_array_fetch_post() {
-    let initial_array = vec![3.14159, 2.71828, 1.61803];
+    let initial_array = vec![std::f64::consts::PI, std::f64::consts::E, 1.61803];
     let name = "loc:double:array";
     let server = Server::start_isolated().expect("start isolated server");
 
@@ -13,7 +13,7 @@ fn test_pv_local_double_array_fetch_post() {
     let fetched = server.fetch_double_array(name).expect("fetch initial");
     assert_eq!(fetched.value, initial_array);
 
-    let test_values = vec![0.0, -1.5, 2.71828, 1e-10, 1e10];
+    let test_values = vec![0.0, -1.5, std::f64::consts::E, 1e-10, 1e10];
     server
         .post_double_array(name, test_values.clone())
         .expect("post double array");

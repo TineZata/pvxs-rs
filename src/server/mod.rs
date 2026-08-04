@@ -660,72 +660,120 @@ async fn handle_client(mut stream: TcpStream, tx: channel::Sender<ManagerCommand
 // Fetched value types (mirror pvxs-sys exactly)
 // ============================================================================
 
+/// Snapshot of a fetched double PV value plus its metadata.
 #[derive(Debug, Clone)]
 pub struct FetchedDouble {
+    /// Current numeric value.
     pub value: f64,
+    /// Alarm severity for the current sample.
     pub alarm_severity: AlarmSeverity,
+    /// Alarm status for the current sample.
     pub alarm_status: AlarmStatus,
+    /// Human-readable alarm message.
     pub alarm_message: String,
+    /// Optional display metadata for the PV.
     pub display_metadata: Option<DisplayMetadata>,
+    /// Optional control metadata for the PV.
     pub control_metadata: Option<ControlMetadata>,
+    /// Optional alarm metadata for the PV.
     pub alarm_metadata: Option<AlarmMetadata>,
 }
 
+/// Snapshot of a fetched int32 PV value plus its metadata.
 #[derive(Debug, Clone)]
 pub struct FetchedInt32 {
+    /// Current numeric value.
     pub value: i32,
+    /// Alarm severity for the current sample.
     pub alarm_severity: AlarmSeverity,
+    /// Alarm status for the current sample.
     pub alarm_status: AlarmStatus,
+    /// Human-readable alarm message.
     pub alarm_message: String,
+    /// Optional display metadata for the PV.
     pub display_metadata: Option<DisplayMetadata>,
+    /// Optional control metadata for the PV.
     pub control_metadata: Option<ControlMetadata>,
+    /// Optional alarm metadata for the PV.
     pub alarm_metadata: Option<AlarmMetadata>,
 }
 
+/// Snapshot of a fetched string PV value plus its metadata.
 #[derive(Debug, Clone)]
 pub struct FetchedString {
+    /// Current string value.
     pub value: String,
+    /// Alarm severity for the current sample.
     pub alarm_severity: AlarmSeverity,
+    /// Alarm status for the current sample.
     pub alarm_status: AlarmStatus,
+    /// Human-readable alarm message.
     pub alarm_message: String,
 }
 
+/// Snapshot of a fetched double-array PV value plus its metadata.
 #[derive(Debug, Clone)]
 pub struct FetchedDoubleArray {
+    /// Current array value.
     pub value: Vec<f64>,
+    /// Alarm severity for the current sample.
     pub alarm_severity: AlarmSeverity,
+    /// Alarm status for the current sample.
     pub alarm_status: AlarmStatus,
+    /// Human-readable alarm message.
     pub alarm_message: String,
+    /// Optional display metadata for the PV.
     pub display_metadata: Option<DisplayMetadata>,
+    /// Optional control metadata for the PV.
     pub control_metadata: Option<ControlMetadata>,
+    /// Optional alarm metadata for the PV.
     pub alarm_metadata: Option<AlarmMetadata>,
 }
 
+/// Snapshot of a fetched int32-array PV value plus its metadata.
 #[derive(Debug, Clone)]
 pub struct FetchedInt32Array {
+    /// Current array value.
     pub value: Vec<i32>,
+    /// Alarm severity for the current sample.
     pub alarm_severity: AlarmSeverity,
+    /// Alarm status for the current sample.
     pub alarm_status: AlarmStatus,
+    /// Human-readable alarm message.
     pub alarm_message: String,
+    /// Optional display metadata for the PV.
     pub display_metadata: Option<DisplayMetadata>,
+    /// Optional control metadata for the PV.
     pub control_metadata: Option<ControlMetadata>,
+    /// Optional alarm metadata for the PV.
     pub alarm_metadata: Option<AlarmMetadata>,
 }
 
+/// Snapshot of a fetched string-array PV value plus its metadata.
 #[derive(Debug, Clone)]
 pub struct FetchedStringArray {
+    /// Current array value.
     pub value: Vec<String>,
+    /// Alarm severity for the current sample.
     pub alarm_severity: AlarmSeverity,
+    /// Alarm status for the current sample.
     pub alarm_status: AlarmStatus,
+    /// Human-readable alarm message.
     pub alarm_message: String,
 }
 
+/// Snapshot of a fetched enum PV value plus its metadata.
 #[derive(Debug, Clone)]
 pub struct FetchedEnum {
+    /// Currently selected enum index.
     pub value: i16,
+    /// Available enum choice names.
     pub value_choices: Vec<String>,
+    /// Alarm severity for the current sample.
     pub alarm_severity: AlarmSeverity,
+    /// Alarm status for the current sample.
     pub alarm_status: AlarmStatus,
+    /// Human-readable alarm message.
     pub alarm_message: String,
 }
 
@@ -744,6 +792,7 @@ pub struct SharedPV {
 }
 
 impl SharedPV {
+    /// Create a new mailbox-backed shared PV.
     pub fn create_mailbox() -> Result<Self> {
         Ok(Self {
             readonly: false,
@@ -751,6 +800,7 @@ impl SharedPV {
         })
     }
 
+    /// Create a new readonly shared PV.
     pub fn create_readonly() -> Result<Self> {
         Ok(Self {
             readonly: true,
@@ -758,11 +808,13 @@ impl SharedPV {
         })
     }
 
+    /// Open a double value for this shared PV.
     pub fn open_double(&mut self, value: f64, _metadata: NTScalarMetadataBuilder) -> Result<()> {
         self.value = Some(crate::Value::nt_scalar_double(value));
         Ok(())
     }
 
+    /// Open a double-array value for this shared PV.
     pub fn open_double_array(
         &mut self,
         value: Vec<f64>,
@@ -772,11 +824,13 @@ impl SharedPV {
         Ok(())
     }
 
+    /// Open an int32 value for this shared PV.
     pub fn open_int32(&mut self, value: i32, _metadata: NTScalarMetadataBuilder) -> Result<()> {
         self.value = Some(crate::Value::nt_scalar_int32(value));
         Ok(())
     }
 
+    /// Open an int32-array value for this shared PV.
     pub fn open_int32_array(
         &mut self,
         value: Vec<i32>,
@@ -786,6 +840,7 @@ impl SharedPV {
         Ok(())
     }
 
+    /// Open a string value for this shared PV.
     pub fn open_string(
         &mut self,
         value: &str,
@@ -795,6 +850,7 @@ impl SharedPV {
         Ok(())
     }
 
+    /// Open a string-array value for this shared PV.
     pub fn open_string_array(
         &mut self,
         value: Vec<String>,
@@ -804,6 +860,7 @@ impl SharedPV {
         Ok(())
     }
 
+    /// Open an enum value for this shared PV.
     pub fn open_enum(
         &mut self,
         choices: Vec<&str>,
@@ -815,6 +872,7 @@ impl SharedPV {
         Ok(())
     }
 
+    /// Replace the current value of this shared PV.
     pub fn post(&mut self, value: crate::Value) -> Result<()> {
         if self.readonly {
             return Err(PvxsError::new("SharedPV is readonly"));
@@ -823,11 +881,13 @@ impl SharedPV {
         Ok(())
     }
 
+    /// Return the current value stored by this shared PV.
     pub fn current(&self) -> Option<crate::Value> {
         self.value.clone()
     }
 }
 
+/// Compatibility wrapper mirroring `pvxs-sys::StaticSource`.
 /// Compatibility wrapper mirroring `pvxs-sys::StaticSource`.
 #[derive(Debug, Clone, Default)]
 pub struct StaticSource {
@@ -835,10 +895,12 @@ pub struct StaticSource {
 }
 
 impl StaticSource {
+    /// Create a new empty static source.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Add a shared PV under the provided name.
     pub fn add(&mut self, name: &str, pv: SharedPV) -> Result<()> {
         if self.pvs.contains_key(name) {
             return Err(PvxsError::new(format!("PV '{name}' already exists")));
@@ -865,10 +927,12 @@ pub struct ServerHandle {
 }
 
 impl ServerHandle {
+    /// Return the TCP port used by the server.
     pub fn tcp_port(&self) -> u16 {
         self.tcp_port
     }
 
+    /// Return the UDP port used by the server.
     pub fn udp_port(&self) -> u16 {
         self.udp_port
     }
@@ -893,6 +957,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Add a shared PV to the running server.
     pub fn add_shared_pv(&self, name: &str, pv: SharedPV) -> Result<()> {
         let value = pv
             .current()
@@ -965,6 +1030,7 @@ impl ServerHandle {
         Ok(())
     }
 
+    /// Add all shared PVs from a static source to the running server.
     pub fn add_source(&self, source: StaticSource) -> Result<()> {
         for (name, pv) in source.pvs {
             self.add_shared_pv(&name, pv)?;
@@ -972,6 +1038,7 @@ impl ServerHandle {
         Ok(())
     }
 
+    /// Create a double PV in the in-memory registry.
     pub fn create_pv_double(
         &self,
         name: &str,
@@ -990,6 +1057,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Create a double-array PV in the in-memory registry.
     pub fn create_pv_double_array(
         &self,
         name: &str,
@@ -1008,6 +1076,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Create an int32 PV in the in-memory registry.
     pub fn create_pv_int32(
         &self,
         name: &str,
@@ -1026,6 +1095,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Create an int32-array PV in the in-memory registry.
     pub fn create_pv_int32_array(
         &self,
         name: &str,
@@ -1044,6 +1114,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Create a string PV in the in-memory registry.
     pub fn create_pv_string(
         &self,
         name: &str,
@@ -1062,6 +1133,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Create a string-array PV in the in-memory registry.
     pub fn create_pv_string_array(
         &self,
         name: &str,
@@ -1080,6 +1152,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Create an enum PV in the in-memory registry.
     pub fn create_pv_enum(
         &self,
         name: &str,
@@ -1100,6 +1173,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Post a new value to an existing double PV.
     pub fn post_double(&self, name: &str, value: f64) -> Result<()> {
         let (tx, rx) = channel::bounded(1);
         self.send(
@@ -1112,6 +1186,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Post a new value to an existing double-array PV.
     pub fn post_double_array(&self, name: &str, value: Vec<f64>) -> Result<()> {
         let (tx, rx) = channel::bounded(1);
         self.send(
@@ -1124,6 +1199,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Post a new value to an existing int32 PV.
     pub fn post_int32(&self, name: &str, value: i32) -> Result<()> {
         let (tx, rx) = channel::bounded(1);
         self.send(
@@ -1136,6 +1212,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Post a new value to an existing int32-array PV.
     pub fn post_int32_array(&self, name: &str, value: Vec<i32>) -> Result<()> {
         let (tx, rx) = channel::bounded(1);
         self.send(
@@ -1148,6 +1225,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Post a new value to an existing string PV.
     pub fn post_string(&self, name: &str, value: &str) -> Result<()> {
         let (tx, rx) = channel::bounded(1);
         self.send(
@@ -1160,6 +1238,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Post a new value to an existing string-array PV.
     pub fn post_string_array(&self, name: &str, value: Vec<String>) -> Result<()> {
         let (tx, rx) = channel::bounded(1);
         self.send(
@@ -1172,6 +1251,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Post a new value to an existing enum PV.
     pub fn post_enum(&self, name: &str, value: i16) -> Result<()> {
         let (tx, rx) = channel::bounded(1);
         self.send(
@@ -1184,6 +1264,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Remove an existing PV from the in-memory registry.
     pub fn remove_pv(&self, name: &str) -> Result<()> {
         let (tx, rx) = channel::bounded(1);
         self.send(
@@ -1195,6 +1276,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Fetch the current value of a double PV.
     pub fn fetch_double(&self, name: &str) -> Result<FetchedDouble> {
         let (tx, rx) = channel::bounded(1);
         self.send(
@@ -1206,6 +1288,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Fetch the current value of an int32 PV.
     pub fn fetch_int32(&self, name: &str) -> Result<FetchedInt32> {
         let (tx, rx) = channel::bounded(1);
         self.send(
@@ -1217,6 +1300,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Fetch the current value of a string PV.
     pub fn fetch_string(&self, name: &str) -> Result<FetchedString> {
         let (tx, rx) = channel::bounded(1);
         self.send(
@@ -1228,6 +1312,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Fetch the current value of a double-array PV.
     pub fn fetch_double_array(&self, name: &str) -> Result<FetchedDoubleArray> {
         let (tx, rx) = channel::bounded(1);
         self.send(
@@ -1239,6 +1324,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Fetch the current value of an int32-array PV.
     pub fn fetch_int32_array(&self, name: &str) -> Result<FetchedInt32Array> {
         let (tx, rx) = channel::bounded(1);
         self.send(
@@ -1250,6 +1336,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Fetch the current value of a string-array PV.
     pub fn fetch_string_array(&self, name: &str) -> Result<FetchedStringArray> {
         let (tx, rx) = channel::bounded(1);
         self.send(
@@ -1261,6 +1348,7 @@ impl ServerHandle {
         )?
     }
 
+    /// Fetch the current value of an enum PV.
     pub fn fetch_enum(&self, name: &str) -> Result<FetchedEnum> {
         let (tx, rx) = channel::bounded(1);
         self.send(
@@ -1530,6 +1618,7 @@ impl Server {
         self.handle.udp_port()
     }
 
+    /// Create a double PV in the in-memory registry.
     pub fn create_pv_double(
         &self,
         name: &str,
@@ -1539,6 +1628,7 @@ impl Server {
         self.handle.create_pv_double(name, initial, metadata)
     }
 
+    /// Create a double-array PV in the in-memory registry.
     pub fn create_pv_double_array(
         &self,
         name: &str,
@@ -1548,6 +1638,7 @@ impl Server {
         self.handle.create_pv_double_array(name, initial, metadata)
     }
 
+    /// Create an int32 PV in the in-memory registry.
     pub fn create_pv_int32(
         &self,
         name: &str,
@@ -1557,6 +1648,7 @@ impl Server {
         self.handle.create_pv_int32(name, initial, metadata)
     }
 
+    /// Create an int32-array PV in the in-memory registry.
     pub fn create_pv_int32_array(
         &self,
         name: &str,
@@ -1566,6 +1658,7 @@ impl Server {
         self.handle.create_pv_int32_array(name, initial, metadata)
     }
 
+    /// Create a string PV in the in-memory registry.
     pub fn create_pv_string(
         &self,
         name: &str,
@@ -1575,6 +1668,7 @@ impl Server {
         self.handle.create_pv_string(name, initial, metadata)
     }
 
+    /// Create a string-array PV in the in-memory registry.
     pub fn create_pv_string_array(
         &self,
         name: &str,
@@ -1584,6 +1678,7 @@ impl Server {
         self.handle.create_pv_string_array(name, initial, metadata)
     }
 
+    /// Create an enum PV in the in-memory registry.
     pub fn create_pv_enum(
         &self,
         name: &str,
@@ -1595,70 +1690,87 @@ impl Server {
             .create_pv_enum(name, choices, selected_index, metadata)
     }
 
+    /// Add a shared PV to the running server.
     pub fn add_shared_pv(&self, name: &str, pv: SharedPV) -> Result<()> {
         self.handle.add_shared_pv(name, pv)
     }
 
+    /// Add all shared PVs from a static source to the running server.
     pub fn add_source(&self, source: StaticSource) -> Result<()> {
         self.handle.add_source(source)
     }
 
+    /// Post a new value to an existing double PV.
     pub fn post_double(&self, name: &str, value: f64) -> Result<()> {
         self.handle.post_double(name, value)
     }
 
+    /// Post a new value to an existing double-array PV.
     pub fn post_double_array(&self, name: &str, value: Vec<f64>) -> Result<()> {
         self.handle.post_double_array(name, value)
     }
 
+    /// Post a new value to an existing int32 PV.
     pub fn post_int32(&self, name: &str, value: i32) -> Result<()> {
         self.handle.post_int32(name, value)
     }
 
+    /// Post a new value to an existing int32-array PV.
     pub fn post_int32_array(&self, name: &str, value: Vec<i32>) -> Result<()> {
         self.handle.post_int32_array(name, value)
     }
 
+    /// Post a new value to an existing string PV.
     pub fn post_string(&self, name: &str, value: &str) -> Result<()> {
         self.handle.post_string(name, value)
     }
 
+    /// Post a new value to an existing string-array PV.
     pub fn post_string_array(&self, name: &str, value: Vec<String>) -> Result<()> {
         self.handle.post_string_array(name, value)
     }
 
+    /// Post a new value to an existing enum PV.
     pub fn post_enum(&self, name: &str, value: i16) -> Result<()> {
         self.handle.post_enum(name, value)
     }
 
+    /// Remove an existing PV from the in-memory registry.
     pub fn remove_pv(&self, name: &str) -> Result<()> {
         self.handle.remove_pv(name)
     }
 
+    /// Fetch the current value of a double PV.
     pub fn fetch_double(&self, name: &str) -> Result<FetchedDouble> {
         self.handle.fetch_double(name)
     }
 
+    /// Fetch the current value of an int32 PV.
     pub fn fetch_int32(&self, name: &str) -> Result<FetchedInt32> {
         self.handle.fetch_int32(name)
     }
 
+    /// Fetch the current value of a string PV.
     pub fn fetch_string(&self, name: &str) -> Result<FetchedString> {
         self.handle.fetch_string(name)
     }
 
+    /// Fetch the current value of a double-array PV.
     pub fn fetch_double_array(&self, name: &str) -> Result<FetchedDoubleArray> {
         self.handle.fetch_double_array(name)
     }
 
+    /// Fetch the current value of an int32-array PV.
     pub fn fetch_int32_array(&self, name: &str) -> Result<FetchedInt32Array> {
         self.handle.fetch_int32_array(name)
     }
 
+    /// Fetch the current value of a string-array PV.
     pub fn fetch_string_array(&self, name: &str) -> Result<FetchedStringArray> {
         self.handle.fetch_string_array(name)
     }
 
+    /// Fetch the current value of an enum PV.
     pub fn fetch_enum(&self, name: &str) -> Result<FetchedEnum> {
         self.handle.fetch_enum(name)
     }
@@ -1734,10 +1846,10 @@ mod tests {
     #[test]
     fn create_and_fetch_double() {
         let s = server();
-        s.create_pv_double("A", 3.14, NTScalarMetadataBuilder::new())
+        s.create_pv_double("A", std::f64::consts::PI, NTScalarMetadataBuilder::new())
             .unwrap();
         let f = s.fetch_double("A").unwrap();
-        assert!((f.value - 3.14).abs() < 1e-9);
+        assert!((f.value - std::f64::consts::PI).abs() < 1e-9);
         assert_eq!(f.alarm_severity, AlarmSeverity::NoAlarm);
         s.stop_drop().unwrap();
     }

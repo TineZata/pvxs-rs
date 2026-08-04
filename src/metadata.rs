@@ -2,18 +2,28 @@
 // SPDX-License-Identifier: MPL-2.0
 use crate::AlarmSeverity;
 
-/// Alarm metadata for NTScalar
+/// Alarm metadata for NTScalar.
 #[derive(Clone, Debug, Default)]
 pub struct AlarmMetadata {
+    /// Whether the alarm calculation is active.
     pub active: bool,
+    /// Low alarm threshold.
     pub low_alarm_limit: f64,
+    /// Low warning threshold.
     pub low_warning_limit: f64,
+    /// High warning threshold.
     pub high_warning_limit: f64,
+    /// High alarm threshold.
     pub high_alarm_limit: f64,
+    /// Severity used when crossing the low alarm threshold.
     pub low_alarm_severity: AlarmSeverity,
+    /// Severity used when crossing the low warning threshold.
     pub low_warning_severity: AlarmSeverity,
+    /// Severity used when crossing the high warning threshold.
     pub high_warning_severity: AlarmSeverity,
+    /// Severity used when crossing the high alarm threshold.
     pub high_alarm_severity: AlarmSeverity,
+    /// Hysteresis applied to alarm comparisons.
     pub hysteresis: u8,
 }
 
@@ -23,72 +33,90 @@ impl AlarmMetadata {
         Self::default()
     }
 
+    /// Enable or disable the alarm calculation.
     pub fn active(mut self, active: bool) -> Self {
         self.active = active;
         self
     }
 
+    /// Set the low alarm threshold.
     pub fn low_alarm_limit(mut self, limit: f64) -> Self {
         self.low_alarm_limit = limit;
         self
     }
 
+    /// Set the low warning threshold.
     pub fn low_warning_limit(mut self, limit: f64) -> Self {
         self.low_warning_limit = limit;
         self
     }
 
+    /// Set the high warning threshold.
     pub fn high_warning_limit(mut self, limit: f64) -> Self {
         self.high_warning_limit = limit;
         self
     }
 
+    /// Set the high alarm threshold.
     pub fn high_alarm_limit(mut self, limit: f64) -> Self {
         self.high_alarm_limit = limit;
         self
     }
 
+    /// Set the severity for low alarm transitions.
     pub fn low_alarm_severity(mut self, severity: AlarmSeverity) -> Self {
         self.low_alarm_severity = severity;
         self
     }
 
+    /// Set the severity for low warning transitions.
     pub fn low_warning_severity(mut self, severity: AlarmSeverity) -> Self {
         self.low_warning_severity = severity;
         self
     }
 
+    /// Set the severity for high warning transitions.
     pub fn high_warning_severity(mut self, severity: AlarmSeverity) -> Self {
         self.high_warning_severity = severity;
         self
     }
 
+    /// Set the severity for high alarm transitions.
     pub fn high_alarm_severity(mut self, severity: AlarmSeverity) -> Self {
         self.high_alarm_severity = severity;
         self
     }
 
+    /// Set the hysteresis value.
     pub fn hysteresis(mut self, hysteresis: u8) -> Self {
         self.hysteresis = hysteresis;
         self
     }
 }
 
-/// Display metadata for NTScalar
+/// Display metadata for NTScalar.
 #[derive(Clone, Debug, Default)]
 pub struct DisplayMetadata {
+    /// Lower display limit.
     pub limit_low: i64,
+    /// Upper display limit.
     pub limit_high: i64,
+    /// Human-readable description.
     pub description: String,
+    /// Engineering units.
     pub units: String,
+    /// Display precision.
     pub precision: i32,
 }
 
-/// Control metadata for NTScalar
+/// Control metadata for NTScalar.
 #[derive(Clone, Debug, Default)]
 pub struct ControlMetadata {
+    /// Lower control limit.
     pub limit_low: f64,
+    /// Upper control limit.
     pub limit_high: f64,
+    /// Minimum step size.
     pub min_step: f64,
 }
 

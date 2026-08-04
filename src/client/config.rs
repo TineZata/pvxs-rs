@@ -1,8 +1,10 @@
+/// Network client configuration derived from environment variables.
 #[derive(Debug, Clone, Default)]
 pub struct ClientConfig {
     /// Resolved from `EPICS_PVA_ADDR_LIST`
     pub(crate) addr_list: Vec<String>,
     /// Resolved from `EPICS_PVA_AUTO_ADDR_LIST` (default YES)
+    #[allow(dead_code)]
     pub(crate) auto_addr_list: bool,
     /// Resolved from `EPICS_PVA_BROADCAST_PORT` (default 5076)
     pub(crate) broadcast_port: u16,

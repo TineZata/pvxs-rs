@@ -28,15 +28,25 @@ pub struct Value {
 
 /// The type of a field stored in a [`Value`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The logical field type for a value payload.
 pub enum FieldType {
+    /// Double scalar value.
     Double,
+    /// Int32 scalar value.
     Int32,
+    /// Int64 scalar value.
     Int64,
+    /// Boolean scalar value.
     Bool,
+    /// String scalar value.
     String,
+    /// Enum scalar value.
     Enum,
+    /// Double array value.
     DoubleArray,
+    /// Int32 array value.
     Int32Array,
+    /// String array value.
     StringArray,
 }
 
@@ -290,6 +300,10 @@ impl Value {
         self.fields.insert(field.to_string(), FieldValue::Bool(v));
     }
 
+    /// Get a field value as a boolean.
+    ///
+    /// The value is accepted from bool, int32, or int64 fields and treated as
+    /// truthy when non-zero.
     pub fn get_field_bool(&self, field_name: &str) -> crate::Result<bool> {
         match self.fields.get(field_name) {
             Some(FieldValue::Bool(v)) => Ok(*v),
@@ -312,6 +326,7 @@ impl Value {
         self.fields.insert(field.to_string(), FieldValue::Int64(v));
     }
 
+    /// Get a field value as an i64.
     pub fn get_field_int64(&self, field_name: &str) -> crate::Result<i64> {
         match self.fields.get(field_name) {
             Some(FieldValue::Int64(v)) => Ok(*v),
@@ -354,53 +369,67 @@ impl Value {
 
     // ── display.* convenience setters/getters ────────────────────────────
 
+    /// Set the display limit low field.
     pub fn set_display_limit_low(&mut self, v: i64) {
         self.set_field_int64("display.limitLow", v);
     }
+    /// Get the display limit low field.
     pub fn get_display_limit_low(&self) -> crate::Result<i64> {
         self.get_field_int64("display.limitLow")
     }
 
+    /// Set the display limit high field.
     pub fn set_display_limit_high(&mut self, v: i64) {
         self.set_field_int64("display.limitHigh", v);
     }
+    /// Get the display limit high field.
     pub fn get_display_limit_high(&self) -> crate::Result<i64> {
         self.get_field_int64("display.limitHigh")
     }
 
+    /// Set the display units field.
     pub fn set_display_units(&mut self, v: impl Into<String>) {
         self.set_field_string("display.units", v.into());
     }
+    /// Get the display units field.
     pub fn get_display_units(&self) -> crate::Result<String> {
         self.get_field_string("display.units")
     }
 
+    /// Set the display precision field.
     pub fn set_display_precision(&mut self, v: i32) {
         self.set_field_int32("display.precision", v);
     }
+    /// Get the display precision field.
     pub fn get_display_precision(&self) -> crate::Result<i32> {
         self.get_field_int32("display.precision")
     }
 
+    /// Set the display description field.
     pub fn set_display_description(&mut self, v: impl Into<String>) {
         self.set_field_string("display.description", v.into());
     }
+    /// Get the display description field.
     pub fn get_display_description(&self) -> crate::Result<String> {
         self.get_field_string("display.description")
     }
 
     // ── timeStamp.* convenience setters/getters ──────────────────────────
 
+    /// Set the timestamp seconds field.
     pub fn set_timestamp_seconds(&mut self, v: i64) {
         self.set_field_int64("timeStamp.secondsPastEpoch", v);
     }
+    /// Get the timestamp seconds field.
     pub fn get_timestamp_seconds(&self) -> crate::Result<i64> {
         self.get_field_int64("timeStamp.secondsPastEpoch")
     }
 
+    /// Set the timestamp nanoseconds field.
     pub fn set_timestamp_nanos(&mut self, v: i32) {
         self.set_field_int32("timeStamp.nanoseconds", v);
     }
+    /// Get the timestamp nanoseconds field.
     pub fn get_timestamp_nanos(&self) -> crate::Result<i32> {
         self.get_field_int32("timeStamp.nanoseconds")
     }

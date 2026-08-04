@@ -88,123 +88,218 @@ fn alarm_config_from_builder(b: &NTScalarMetadataBuilder) -> AlarmConfig {
 // Worker commands
 // ============================================================================
 
+/// Internal worker commands for the in-memory PV registry.
 pub enum ManagerCommand {
+    /// Create a double PV with the provided initial value.
     CreateDouble {
+        /// PV name.
         name: String,
+        /// Initial value.
         initial: f64,
+        /// Scalar metadata builder.
         metadata: NTScalarMetadataBuilder,
+        /// Worker reply channel.
         reply: channel::Sender<Result<()>>,
     },
+    /// Create a double-array PV with the provided initial value.
     CreateDoubleArray {
+        /// PV name.
         name: String,
+        /// Initial value.
         initial: Vec<f64>,
+        /// Scalar metadata builder.
         metadata: NTScalarMetadataBuilder,
+        /// Worker reply channel.
         reply: channel::Sender<Result<()>>,
     },
+    /// Create an int32 PV with the provided initial value.
     CreateInt32 {
+        /// PV name.
         name: String,
+        /// Initial value.
         initial: i32,
+        /// Scalar metadata builder.
         metadata: NTScalarMetadataBuilder,
+        /// Worker reply channel.
         reply: channel::Sender<Result<()>>,
     },
+    /// Create an int32-array PV with the provided initial value.
     CreateInt32Array {
+        /// PV name.
         name: String,
+        /// Initial value.
         initial: Vec<i32>,
+        /// Scalar metadata builder.
         metadata: NTScalarMetadataBuilder,
+        /// Worker reply channel.
         reply: channel::Sender<Result<()>>,
     },
+    /// Create a string PV with the provided initial value.
     CreateString {
+        /// PV name.
         name: String,
+        /// Initial value.
         initial: String,
+        /// Scalar metadata builder.
         metadata: NTScalarMetadataBuilder,
+        /// Worker reply channel.
         reply: channel::Sender<Result<()>>,
     },
+    /// Create a string-array PV with the provided initial value.
     CreateStringArray {
+        /// PV name.
         name: String,
+        /// Initial value.
         initial: Vec<String>,
+        /// Scalar metadata builder.
         metadata: NTScalarMetadataBuilder,
+        /// Worker reply channel.
         reply: channel::Sender<Result<()>>,
     },
+    /// Create an enum PV with the provided choices and selected index.
     CreateEnum {
+        /// PV name.
         name: String,
+        /// Available enum choices.
         choices: Vec<String>,
+        /// Selected enum index.
         selected_index: i16,
+        /// Enum metadata builder.
         metadata: NTEnumMetadataBuilder,
+        /// Worker reply channel.
         reply: channel::Sender<Result<()>>,
     },
+    /// Post a new value to an existing double PV.
     PostDouble {
+        /// PV name.
         name: String,
+        /// New double value.
         value: f64,
+        /// Worker reply channel.
         reply: channel::Sender<Result<()>>,
     },
+    /// Post a new value to an existing double-array PV.
     PostDoubleArray {
+        /// PV name.
         name: String,
+        /// New double-array value.
         value: Vec<f64>,
+        /// Worker reply channel.
         reply: channel::Sender<Result<()>>,
     },
+    /// Post a new value to an existing int32 PV.
     PostInt32 {
+        /// PV name.
         name: String,
+        /// New int32 value.
         value: i32,
+        /// Worker reply channel.
         reply: channel::Sender<Result<()>>,
     },
+    /// Post a new value to an existing int32-array PV.
     PostInt32Array {
+        /// PV name.
         name: String,
+        /// New int32-array value.
         value: Vec<i32>,
+        /// Worker reply channel.
         reply: channel::Sender<Result<()>>,
     },
+    /// Post a new value to an existing string PV.
     PostString {
+        /// PV name.
         name: String,
+        /// New string value.
         value: String,
+        /// Worker reply channel.
         reply: channel::Sender<Result<()>>,
     },
+    /// Post a new value to an existing string-array PV.
     PostStringArray {
+        /// PV name.
         name: String,
+        /// New string-array value.
         value: Vec<String>,
+        /// Worker reply channel.
         reply: channel::Sender<Result<()>>,
     },
+    /// Post a new value to an existing enum PV.
     PostEnum {
+        /// PV name.
         name: String,
+        /// New enum index.
         value: i16,
+        /// Worker reply channel.
         reply: channel::Sender<Result<()>>,
     },
+    /// Remove an existing PV from the registry.
     Remove {
+        /// PV name.
         name: String,
+        /// Worker reply channel.
         reply: channel::Sender<Result<()>>,
     },
+    /// Toggle the readonly flag for an existing PV.
     SetReadonly {
+        /// PV name.
         name: String,
+        /// Whether the PV should become readonly.
         readonly: bool,
+        /// Worker reply channel.
         reply: channel::Sender<Result<()>>,
     },
+    /// Fetch the current value of a double PV.
     FetchDouble {
+        /// PV name.
         name: String,
+        /// Worker reply channel.
         reply: channel::Sender<Result<FetchedDouble>>,
     },
+    /// Fetch the current value of an int32 PV.
     FetchInt32 {
+        /// PV name.
         name: String,
+        /// Worker reply channel.
         reply: channel::Sender<Result<FetchedInt32>>,
     },
+    /// Fetch the current value of a string PV.
     FetchString {
+        /// PV name.
         name: String,
+        /// Worker reply channel.
         reply: channel::Sender<Result<FetchedString>>,
     },
+    /// Fetch the current value of a double-array PV.
     FetchDoubleArray {
+        /// PV name.
         name: String,
+        /// Worker reply channel.
         reply: channel::Sender<Result<FetchedDoubleArray>>,
     },
+    /// Fetch the current value of an int32-array PV.
     FetchInt32Array {
+        /// PV name.
         name: String,
+        /// Worker reply channel.
         reply: channel::Sender<Result<FetchedInt32Array>>,
     },
+    /// Fetch the current value of a string-array PV.
     FetchStringArray {
+        /// PV name.
         name: String,
+        /// Worker reply channel.
         reply: channel::Sender<Result<FetchedStringArray>>,
     },
+    /// Fetch the current value of an enum PV.
     FetchEnum {
+        /// PV name.
         name: String,
+        /// Worker reply channel.
         reply: channel::Sender<Result<FetchedEnum>>,
     },
+    /// Stop the worker loop and clear the registry.
     Stop {
+        /// Worker reply channel.
         reply: channel::Sender<Result<()>>,
     },
 }
@@ -213,6 +308,7 @@ pub enum ManagerCommand {
 // Worker loop
 // ============================================================================
 
+/// Run the in-memory PV registry worker loop.
 pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
     let mut pvs: HashMap<String, ManagedPvState> = HashMap::new();
 
@@ -226,14 +322,14 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                 metadata,
                 reply,
             } => {
-                let result = if pvs.contains_key(&name) {
-                    Err(PvxsError::new(format!("PV '{}' already exists", name)))
-                } else {
-                    let alarm_config = alarm_config_from_builder(&metadata);
-                    let ar = compute_alarm_for_scalar(initial, &alarm_config);
-                    pvs.insert(
-                        name,
-                        ManagedPvState::Double {
+                let result = match pvs.entry(name.clone()) {
+                    std::collections::hash_map::Entry::Occupied(_) => {
+                        Err(PvxsError::new(format!("PV '{}' already exists", name)))
+                    }
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        let alarm_config = alarm_config_from_builder(&metadata);
+                        let ar = compute_alarm_for_scalar(initial, &alarm_config);
+                        entry.insert(ManagedPvState::Double {
                             readonly: false,
                             value: initial,
                             alarm_config,
@@ -243,9 +339,9 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                             display: metadata.display,
                             control: metadata.control,
                             alarm_meta: metadata.alarm_metadata,
-                        },
-                    );
-                    Ok(())
+                        });
+                        Ok(())
+                    }
                 };
                 let _ = reply.send(result);
             }
@@ -256,25 +352,27 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                 metadata,
                 reply,
             } => {
-                let result = if pvs.contains_key(&name) {
-                    Err(PvxsError::new(format!("PV '{}' already exists", name)))
-                } else if initial.is_empty() {
-                    Err(PvxsError::new("Initial double array cannot be empty"))
-                } else {
-                    pvs.insert(
-                        name,
-                        ManagedPvState::DoubleArray {
-                            readonly: false,
-                            value: initial,
-                            alarm_severity: AlarmSeverity::NoAlarm,
-                            alarm_status: AlarmStatus::NoAlarm,
-                            alarm_message: "OK".to_string(),
-                            display: metadata.display,
-                            control: metadata.control,
-                            alarm_meta: metadata.alarm_metadata,
-                        },
-                    );
-                    Ok(())
+                let result = match pvs.entry(name.clone()) {
+                    std::collections::hash_map::Entry::Occupied(_) => {
+                        Err(PvxsError::new(format!("PV '{}' already exists", name)))
+                    }
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        if initial.is_empty() {
+                            Err(PvxsError::new("Initial double array cannot be empty"))
+                        } else {
+                            entry.insert(ManagedPvState::DoubleArray {
+                                readonly: false,
+                                value: initial,
+                                alarm_severity: AlarmSeverity::NoAlarm,
+                                alarm_status: AlarmStatus::NoAlarm,
+                                alarm_message: "OK".to_string(),
+                                display: metadata.display,
+                                control: metadata.control,
+                                alarm_meta: metadata.alarm_metadata,
+                            });
+                            Ok(())
+                        }
+                    }
                 };
                 let _ = reply.send(result);
             }
@@ -285,14 +383,14 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                 metadata,
                 reply,
             } => {
-                let result = if pvs.contains_key(&name) {
-                    Err(PvxsError::new(format!("PV '{}' already exists", name)))
-                } else {
-                    let alarm_config = alarm_config_from_builder(&metadata);
-                    let ar = compute_alarm_for_scalar(initial as f64, &alarm_config);
-                    pvs.insert(
-                        name,
-                        ManagedPvState::Int32 {
+                let result = match pvs.entry(name.clone()) {
+                    std::collections::hash_map::Entry::Occupied(_) => {
+                        Err(PvxsError::new(format!("PV '{}' already exists", name)))
+                    }
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        let alarm_config = alarm_config_from_builder(&metadata);
+                        let ar = compute_alarm_for_scalar(initial as f64, &alarm_config);
+                        entry.insert(ManagedPvState::Int32 {
                             readonly: false,
                             value: initial,
                             alarm_config,
@@ -302,9 +400,9 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                             display: metadata.display,
                             control: metadata.control,
                             alarm_meta: metadata.alarm_metadata,
-                        },
-                    );
-                    Ok(())
+                        });
+                        Ok(())
+                    }
                 };
                 let _ = reply.send(result);
             }
@@ -315,25 +413,27 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                 metadata,
                 reply,
             } => {
-                let result = if pvs.contains_key(&name) {
-                    Err(PvxsError::new(format!("PV '{}' already exists", name)))
-                } else if initial.is_empty() {
-                    Err(PvxsError::new("Initial int32 array cannot be empty"))
-                } else {
-                    pvs.insert(
-                        name,
-                        ManagedPvState::Int32Array {
-                            readonly: false,
-                            value: initial,
-                            alarm_severity: AlarmSeverity::NoAlarm,
-                            alarm_status: AlarmStatus::NoAlarm,
-                            alarm_message: "OK".to_string(),
-                            display: metadata.display,
-                            control: metadata.control,
-                            alarm_meta: metadata.alarm_metadata,
-                        },
-                    );
-                    Ok(())
+                let result = match pvs.entry(name.clone()) {
+                    std::collections::hash_map::Entry::Occupied(_) => {
+                        Err(PvxsError::new(format!("PV '{}' already exists", name)))
+                    }
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        if initial.is_empty() {
+                            Err(PvxsError::new("Initial int32 array cannot be empty"))
+                        } else {
+                            entry.insert(ManagedPvState::Int32Array {
+                                readonly: false,
+                                value: initial,
+                                alarm_severity: AlarmSeverity::NoAlarm,
+                                alarm_status: AlarmStatus::NoAlarm,
+                                alarm_message: "OK".to_string(),
+                                display: metadata.display,
+                                control: metadata.control,
+                                alarm_meta: metadata.alarm_metadata,
+                            });
+                            Ok(())
+                        }
+                    }
                 };
                 let _ = reply.send(result);
             }
@@ -344,20 +444,20 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                 metadata: _,
                 reply,
             } => {
-                let result = if pvs.contains_key(&name) {
-                    Err(PvxsError::new(format!("PV '{}' already exists", name)))
-                } else {
-                    pvs.insert(
-                        name,
-                        ManagedPvState::Str {
+                let result = match pvs.entry(name.clone()) {
+                    std::collections::hash_map::Entry::Occupied(_) => {
+                        Err(PvxsError::new(format!("PV '{}' already exists", name)))
+                    }
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        entry.insert(ManagedPvState::Str {
                             readonly: false,
                             value: initial,
                             alarm_severity: AlarmSeverity::NoAlarm,
                             alarm_status: AlarmStatus::NoAlarm,
                             alarm_message: "OK".to_string(),
-                        },
-                    );
-                    Ok(())
+                        });
+                        Ok(())
+                    }
                 };
                 let _ = reply.send(result);
             }
@@ -368,22 +468,24 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                 metadata: _,
                 reply,
             } => {
-                let result = if pvs.contains_key(&name) {
-                    Err(PvxsError::new(format!("PV '{}' already exists", name)))
-                } else if initial.is_empty() {
-                    Err(PvxsError::new("Initial string array cannot be empty"))
-                } else {
-                    pvs.insert(
-                        name,
-                        ManagedPvState::StrArray {
-                            readonly: false,
-                            value: initial,
-                            alarm_severity: AlarmSeverity::NoAlarm,
-                            alarm_status: AlarmStatus::NoAlarm,
-                            alarm_message: "OK".to_string(),
-                        },
-                    );
-                    Ok(())
+                let result = match pvs.entry(name.clone()) {
+                    std::collections::hash_map::Entry::Occupied(_) => {
+                        Err(PvxsError::new(format!("PV '{}' already exists", name)))
+                    }
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        if initial.is_empty() {
+                            Err(PvxsError::new("Initial string array cannot be empty"))
+                        } else {
+                            entry.insert(ManagedPvState::StrArray {
+                                readonly: false,
+                                value: initial,
+                                alarm_severity: AlarmSeverity::NoAlarm,
+                                alarm_status: AlarmStatus::NoAlarm,
+                                alarm_message: "OK".to_string(),
+                            });
+                            Ok(())
+                        }
+                    }
                 };
                 let _ = reply.send(result);
             }
@@ -395,25 +497,27 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                 metadata: _,
                 reply,
             } => {
-                let result = if pvs.contains_key(&name) {
-                    Err(PvxsError::new(format!("PV '{}' already exists", name)))
-                } else if choices.is_empty() {
-                    Err(PvxsError::new("Enum choices cannot be empty"))
-                } else if selected_index as usize >= choices.len() {
-                    Err(PvxsError::new("selected_index out of range"))
-                } else {
-                    pvs.insert(
-                        name,
-                        ManagedPvState::Enum {
-                            readonly: false,
-                            value: selected_index,
-                            choices,
-                            alarm_severity: AlarmSeverity::NoAlarm,
-                            alarm_status: AlarmStatus::NoAlarm,
-                            alarm_message: "OK".to_string(),
-                        },
-                    );
-                    Ok(())
+                let result = match pvs.entry(name.clone()) {
+                    std::collections::hash_map::Entry::Occupied(_) => {
+                        Err(PvxsError::new(format!("PV '{}' already exists", name)))
+                    }
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        if choices.is_empty() {
+                            Err(PvxsError::new("Enum choices cannot be empty"))
+                        } else if selected_index as usize >= choices.len() {
+                            Err(PvxsError::new("selected_index out of range"))
+                        } else {
+                            entry.insert(ManagedPvState::Enum {
+                                readonly: false,
+                                value: selected_index,
+                                choices,
+                                alarm_severity: AlarmSeverity::NoAlarm,
+                                alarm_status: AlarmStatus::NoAlarm,
+                                alarm_message: "OK".to_string(),
+                            });
+                            Ok(())
+                        }
+                    }
                 };
                 let _ = reply.send(result);
             }

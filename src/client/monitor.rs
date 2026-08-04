@@ -35,6 +35,7 @@ fn register_monitor(name: &str, inner: &Arc<Mutex<MonitorInner>>) {
     subscribers.push(Arc::downgrade(inner));
 }
 
+#[allow(dead_code)]
 pub(crate) fn publish_value(name: &str, value: Value) -> usize {
     let mut guard = monitor_registry().lock().unwrap();
     let subscribers = guard.entry(name.to_string()).or_default();
@@ -107,6 +108,7 @@ impl Monitor {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn push_update(&mut self, value: Value) {
         let (notify, callback) = {
             let mut guard = self.inner.lock().unwrap();
@@ -121,6 +123,7 @@ impl Monitor {
         notify.notify_waiters();
     }
 
+    #[allow(dead_code)]
     pub(crate) fn set_connected(&mut self, connected: bool) {
         self.inner.lock().unwrap().connected = connected;
     }
