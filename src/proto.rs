@@ -10,6 +10,7 @@ pub const FLAG_FROM_SERVER: u8 = 0x40;
 // Application command codes (pvAccess spec §4.1)
 pub const CMD_BEACON: u8 = 0x00;
 pub const CMD_CONNECTION_VALIDATION: u8 = 0x01; // server → client
+#[allow(dead_code)]
 pub const CMD_ECHO: u8 = 0x02;
 pub const CMD_SEARCH: u8 = 0x03;
 pub const CMD_SEARCH_RESPONSE: u8 = 0x04;
@@ -20,8 +21,11 @@ pub const CMD_GET: u8 = 0x0A;
 pub const CMD_PUT: u8 = 0x0B;
 pub const CMD_MONITOR: u8 = 0x0D;
 pub const CMD_DESTROY_REQUEST: u8 = 0x0F;
+#[allow(dead_code)]
 pub const CMD_GET_FIELD: u8 = 0x11;
+#[allow(dead_code)]
 pub const CMD_RPC: u8 = 0x14;
+#[allow(dead_code)]
 pub const CMD_ORIGIN_TAG: u8 = 0x16;
 
 // Status type bytes
@@ -191,9 +195,9 @@ pub fn read_i64_le(cur: &mut &[u8]) -> Option<i64> {
 }
 
 pub fn read_f32_le(cur: &mut &[u8]) -> Option<f32> {
-    read_u32_le(cur).map(|v| f32::from_bits(v))
+    read_u32_le(cur).map(f32::from_bits)
 }
 
 pub fn read_f64_le(cur: &mut &[u8]) -> Option<f64> {
-    read_u64_le(cur).map(|v| f64::from_bits(v))
+    read_u64_le(cur).map(f64::from_bits)
 }

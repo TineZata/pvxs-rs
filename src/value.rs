@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MPL-2.0
 use std::collections::HashMap;
 use std::fmt;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// A PVAccess value container — pure-Rust replacement for the cxx-backed ValueWrapper.
 ///
@@ -15,8 +16,10 @@ use std::fmt;
 /// use pvxs::Value;
 ///
 /// let mut v = Value::new();
-/// v.set_field_double("value", 3.14);
-/// assert_eq!(v.get_field_double("value").unwrap(), 3.14);
+/// v.set_display_units("A");
+/// v.set_timestamp_seconds(1_724_000_000);
+/// assert_eq!(v.get_display_units().unwrap(), "A");
+/// assert_eq!(v.get_timestamp_seconds().unwrap(), 1_724_000_000);
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct Value {
@@ -25,15 +28,25 @@ pub struct Value {
 
 /// The type of a field stored in a [`Value`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The logical field type for a value payload.
 pub enum FieldType {
+    /// Double scalar value.
     Double,
+    /// Int32 scalar value.
     Int32,
+    /// Int64 scalar value.
     Int64,
+    /// Boolean scalar value.
     Bool,
+    /// String scalar value.
     String,
+    /// Enum scalar value.
     Enum,
+    /// Double array value.
     DoubleArray,
+    /// Int32 array value.
     Int32Array,
+    /// String array value.
     StringArray,
 }
 
@@ -59,6 +72,78 @@ impl Value {
     /// Check if this value is valid (non-empty).
     pub fn is_valid(&self) -> bool {
         !self.fields.is_empty()
+    }
+
+    /// Build an NTScalar value with standard alarm/timestamp fields populated.
+    pub fn nt_scalar_double(value: f64) -> Self {
+        let mut out = Self::new();
+        out.set_field_double("value", value);
+        out.populate_nt_common();
+        out
+    }
+
+    /// Build an NTScalar value with standard alarm/timestamp fields populated.
+    pub fn nt_scalar_int32(value: i32) -> Self {
+        let mut out = Self::new();
+        out.set_field_int32("value", value);
+        out.populate_nt_common();
+        out
+    }
+
+    /// Build an NTScalar value with standard alarm/timestamp fields populated.
+    pub fn nt_scalar_string(value: impl Into<String>) -> Self {
+        let mut out = Self::new();
+        out.set_field_string("value", value.into());
+        out.populate_nt_common();
+        out
+    }
+
+    /// Build an NTScalarArray value with standard alarm/timestamp fields populated.
+    pub fn nt_scalar_array_double(value: Vec<f64>) -> Self {
+        let mut out = Self::new();
+        out.set_field_double_array("value", value);
+        out.populate_nt_common();
+        out
+    }
+
+    /// Build an NTScalarArray value with standard alarm/timestamp fields populated.
+    pub fn nt_scalar_array_int32(value: Vec<i32>) -> Self {
+        let mut out = Self::new();
+        out.set_field_int32_array("value", value);
+        out.populate_nt_common();
+        out
+    }
+
+    /// Build an NTScalarArray value with standard alarm/timestamp fields populated.
+    pub fn nt_scalar_array_string(value: Vec<String>) -> Self {
+        let mut out = Self::new();
+        out.set_field_string_array("value", value);
+        out.populate_nt_common();
+        out
+    }
+
+    /// Build an NTEnum value with standard alarm/timestamp fields populated.
+    ///
+    /// The selected enum index is stored in `value`, and the list of choice
+    /// labels is stored in `value.choices`.
+    pub fn nt_enum(value: i16, choices: Vec<String>) -> Self {
+        let mut out = Self::new();
+        out.set_field_enum("value", value);
+        out.set_field_string_array("value.choices", choices);
+        out.populate_nt_common();
+        out
+    }
+
+    fn populate_nt_common(&mut self) {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default();
+        self.set_field_int32("alarm.severity", 0);
+        self.set_field_int32("alarm.status", 0);
+        self.set_field_string("alarm.message", "OK".to_string());
+        self.set_field_int64("timeStamp.secondsPastEpoch", now.as_secs() as i64);
+        self.set_field_int32("timeStamp.nanoseconds", now.subsec_nanos() as i32);
+        self.set_field_int32("timeStamp.userTag", 0);
     }
 
     // ── setters (pub(crate) — used by the client/server impls) ──────────────
@@ -215,6 +300,10 @@ impl Value {
         self.fields.insert(field.to_string(), FieldValue::Bool(v));
     }
 
+    /// Get a field value as a boolean.
+    ///
+    /// The value is accepted from bool, int32, or int64 fields and treated as
+    /// truthy when non-zero.
     pub fn get_field_bool(&self, field_name: &str) -> crate::Result<bool> {
         match self.fields.get(field_name) {
             Some(FieldValue::Bool(v)) => Ok(*v),
@@ -237,6 +326,7 @@ impl Value {
         self.fields.insert(field.to_string(), FieldValue::Int64(v));
     }
 
+    /// Get a field value as an i64.
     pub fn get_field_int64(&self, field_name: &str) -> crate::Result<i64> {
         match self.fields.get(field_name) {
             Some(FieldValue::Int64(v)) => Ok(*v),
@@ -279,53 +369,67 @@ impl Value {
 
     // ── display.* convenience setters/getters ────────────────────────────
 
+    /// Set the display limit low field.
     pub fn set_display_limit_low(&mut self, v: i64) {
         self.set_field_int64("display.limitLow", v);
     }
+    /// Get the display limit low field.
     pub fn get_display_limit_low(&self) -> crate::Result<i64> {
         self.get_field_int64("display.limitLow")
     }
 
+    /// Set the display limit high field.
     pub fn set_display_limit_high(&mut self, v: i64) {
         self.set_field_int64("display.limitHigh", v);
     }
+    /// Get the display limit high field.
     pub fn get_display_limit_high(&self) -> crate::Result<i64> {
         self.get_field_int64("display.limitHigh")
     }
 
+    /// Set the display units field.
     pub fn set_display_units(&mut self, v: impl Into<String>) {
         self.set_field_string("display.units", v.into());
     }
+    /// Get the display units field.
     pub fn get_display_units(&self) -> crate::Result<String> {
         self.get_field_string("display.units")
     }
 
+    /// Set the display precision field.
     pub fn set_display_precision(&mut self, v: i32) {
         self.set_field_int32("display.precision", v);
     }
+    /// Get the display precision field.
     pub fn get_display_precision(&self) -> crate::Result<i32> {
         self.get_field_int32("display.precision")
     }
 
+    /// Set the display description field.
     pub fn set_display_description(&mut self, v: impl Into<String>) {
         self.set_field_string("display.description", v.into());
     }
+    /// Get the display description field.
     pub fn get_display_description(&self) -> crate::Result<String> {
         self.get_field_string("display.description")
     }
 
     // ── timeStamp.* convenience setters/getters ──────────────────────────
 
+    /// Set the timestamp seconds field.
     pub fn set_timestamp_seconds(&mut self, v: i64) {
         self.set_field_int64("timeStamp.secondsPastEpoch", v);
     }
+    /// Get the timestamp seconds field.
     pub fn get_timestamp_seconds(&self) -> crate::Result<i64> {
         self.get_field_int64("timeStamp.secondsPastEpoch")
     }
 
+    /// Set the timestamp nanoseconds field.
     pub fn set_timestamp_nanos(&mut self, v: i32) {
         self.set_field_int32("timeStamp.nanoseconds", v);
     }
+    /// Get the timestamp nanoseconds field.
     pub fn get_timestamp_nanos(&self) -> crate::Result<i32> {
         self.get_field_int32("timeStamp.nanoseconds")
     }
@@ -462,5 +566,43 @@ mod tests {
         assert!(v.get_field_string("da").is_err());
         // Bool accessor on a double-array field should error
         assert!(v.get_field_bool("da").is_err());
+    }
+
+    #[test]
+    fn nt_scalar_builder_populates_common_fields() {
+        let v = Value::nt_scalar_double(3.25);
+
+        assert!((v.get_field_double("value").unwrap() - 3.25).abs() < 1e-12);
+        assert_eq!(v.get_field_int32("alarm.severity").unwrap(), 0);
+        assert_eq!(v.get_field_int32("alarm.status").unwrap(), 0);
+        assert_eq!(v.get_field_string("alarm.message").unwrap(), "OK");
+        assert!(v.get_timestamp_seconds().unwrap() > 0);
+        assert!(v.get_timestamp_nanos().unwrap() >= 0);
+        assert_eq!(v.get_field_int32("timeStamp.userTag").unwrap(), 0);
+    }
+
+    #[test]
+    fn nt_scalar_array_builder_populates_value_and_common_fields() {
+        let v = Value::nt_scalar_array_int32(vec![1, 2, 3]);
+
+        assert_eq!(v.get_field_int32_array("value").unwrap(), vec![1, 2, 3]);
+        assert_eq!(v.get_field_int32("alarm.severity").unwrap(), 0);
+        assert_eq!(v.get_field_int32("alarm.status").unwrap(), 0);
+        assert_eq!(v.get_field_string("alarm.message").unwrap(), "OK");
+        assert!(v.get_timestamp_seconds().unwrap() > 0);
+    }
+
+    #[test]
+    fn nt_enum_builder_populates_choices_and_common_fields() {
+        let v = Value::nt_enum(1, vec!["OFF".to_string(), "ON".to_string()]);
+
+        assert_eq!(v.get_field_enum("value").unwrap(), 1);
+        assert_eq!(
+            v.get_field_string_array("value.choices").unwrap(),
+            vec!["OFF".to_string(), "ON".to_string()]
+        );
+        assert_eq!(v.get_field_int32("alarm.severity").unwrap(), 0);
+        assert_eq!(v.get_field_int32("alarm.status").unwrap(), 0);
+        assert_eq!(v.get_field_string("alarm.message").unwrap(), "OK");
     }
 }

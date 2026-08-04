@@ -2,19 +2,20 @@
 // SPDX-License-Identifier: MPL-2.0
 use crate::{AlarmMetadata, ControlMetadata};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+/// Severity reported for alarm conditions.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AlarmSeverity {
+    /// No active alarm.
+    #[default]
     NoAlarm = 0,
+    /// Minor alarm severity.
     Minor = 1,
+    /// Major alarm severity.
     Major = 2,
+    /// Invalid or out-of-range condition.
     Invalid = 3,
+    /// Undefined alarm severity.
     UndefinedAlarm = 4,
-}
-
-impl Default for AlarmSeverity {
-    fn default() -> Self {
-        AlarmSeverity::NoAlarm
-    }
 }
 
 impl From<i32> for AlarmSeverity {
@@ -30,22 +31,26 @@ impl From<i32> for AlarmSeverity {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+/// Status reported for alarm conditions.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AlarmStatus {
+    /// No active alarm status.
+    #[default]
     NoAlarm = 0,
+    /// Device-related status.
     DeviceStatus = 1,
+    /// Driver-related status.
     DriverStatus = 2,
+    /// Record-related status.
     RecordStatus = 3,
+    /// Database-related status.
     DbStatus = 4,
+    /// Configuration-related status.
     ConfigStatus = 5,
+    /// Undefined status.
     UndefinedStatus = 6,
+    /// Client-related status.
     ClientStatus = 7,
-}
-
-impl Default for AlarmStatus {
-    fn default() -> Self {
-        AlarmStatus::NoAlarm
-    }
 }
 
 impl From<i32> for AlarmStatus {
@@ -64,12 +69,14 @@ impl From<i32> for AlarmStatus {
     }
 }
 
+/// Configuration used to evaluate scalar alarms.
 #[derive(Clone, Debug, Default)]
 pub struct AlarmConfig {
     pub(crate) control: Option<ControlMetadata>,
     pub(crate) alarm_metadata: Option<AlarmMetadata>,
 }
 
+/// Result of evaluating a scalar alarm against a configuration.
 #[derive(Clone, Debug)]
 pub struct AlarmResult {
     pub(crate) allow: bool,
@@ -78,6 +85,7 @@ pub struct AlarmResult {
     pub(crate) message: String,
 }
 
+/// Compute the alarm state for a scalar value using the provided configuration.
 pub fn compute_alarm_for_scalar(value: f64, config: &AlarmConfig) -> AlarmResult {
     // Control limits: if present, reject updates outside limits
     if let Some(control) = &config.control {

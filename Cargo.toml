@@ -4,14 +4,16 @@ version = "0.1.0"
 edition = "2021"
 description = "Pure-Rust pvAccess implementation with the same public API as pvxs-sys — no C++ toolchain, no EPICS_BASE, no DLLs."
 license = "MPL-2.0"
-# repository = ""
+repository = "https://github.com/epics-rs/pvxs-rs"
+keywords = ["epics", "pvaccess", "pvxs", "network", "rust"]
+categories = ["network-programming", "science"]
 
 [dependencies]
 crossbeam-channel = "0.5"
 bytes = "1"
 
 # Async runtime + TCP/UDP I/O for the pvAccess transport layer.
-tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync"] }
 
 # Core: EPICS libCom for Rust — runtime (task spawn/sleep/interval) and
 # net (per-NIC async UDP, interface enumeration, loopback multicast).
@@ -20,6 +22,7 @@ epics-libcom-rs = { git = "https://github.com/epics-rs/epics-rs", package = "epi
 
 [features]
 network = []
+async = []
 
 [dev-dependencies]
 # Bring in #[tokio::test] macro for async integration tests.

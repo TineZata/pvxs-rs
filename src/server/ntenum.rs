@@ -1,3 +1,5 @@
+// Copyright 2026 Tine Zata
+// SPDX-License-Identifier: MPL-2.0
 use std::time::{SystemTime, UNIX_EPOCH};
 /// Builder for NTEnum PV metadata.
 ///
@@ -12,6 +14,7 @@ pub struct NTEnumMetadataBuilder {
 }
 
 impl NTEnumMetadataBuilder {
+    /// Create a new enum metadata builder with default values.
     pub fn new() -> Self {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -26,6 +29,7 @@ impl NTEnumMetadataBuilder {
         }
     }
 
+    /// Set the alarm metadata for the enum.
     pub fn alarm(mut self, severity: i32, status: i32, message: impl Into<String>) -> Self {
         self.alarm_severity = severity;
         self.alarm_status = status;
@@ -33,6 +37,7 @@ impl NTEnumMetadataBuilder {
         self
     }
 
+    /// Set the timestamp metadata for the enum.
     pub fn timestamp(mut self, seconds: i64, nanos: i32, user_tag: i32) -> Self {
         self.timestamp_seconds = seconds;
         self.timestamp_nanos = nanos;

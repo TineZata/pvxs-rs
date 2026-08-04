@@ -1,3 +1,5 @@
+// Copyright 2026 Tine Zata
+// SPDX-License-Identifier: MPL-2.0
 use crate::alarms::{AlarmSeverity, AlarmStatus};
 use crate::metadata::{DisplayMetadata, ControlMetadata, AlarmMetadata};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -19,6 +21,7 @@ pub struct NTScalarMetadataBuilder {
 }
 
 impl NTScalarMetadataBuilder {
+    /// Create a new metadata builder with default values.
     pub fn new() -> Self {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -36,6 +39,7 @@ impl NTScalarMetadataBuilder {
         }
     }
 
+    /// Set the alarm metadata for the scalar.
     pub fn alarm(
         mut self,
         severity: AlarmSeverity,
@@ -48,6 +52,7 @@ impl NTScalarMetadataBuilder {
         self
     }
 
+    /// Set the timestamp metadata for the scalar.
     pub fn timestamp(mut self, seconds: i64, nanos: i32, user_tag: i32) -> Self {
         self.timestamp_seconds = seconds;
         self.timestamp_nanos = nanos;
@@ -55,16 +60,19 @@ impl NTScalarMetadataBuilder {
         self
     }
 
+    /// Set the display metadata for the scalar.
     pub fn display(mut self, meta: DisplayMetadata) -> Self {
         self.display = Some(meta);
         self
     }
 
+    /// Set the control metadata for the scalar.
     pub fn control(mut self, meta: ControlMetadata) -> Self {
         self.control = Some(meta);
         self
     }
 
+    /// Set the alarm metadata object for the scalar.
     pub fn alarm_metadata(mut self, meta: AlarmMetadata) -> Self {
         self.alarm_metadata = Some(meta);
         self

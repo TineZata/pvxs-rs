@@ -15,10 +15,12 @@ pub enum FieldDesc {
     /// A 1-D array field; stores the *element* scalar type code.
     ScalarArray(u8),
     Structure {
+        #[allow(dead_code)]
         type_id: String,
         fields: Vec<(String, FieldDesc)>,
     },
     Union {
+        #[allow(dead_code)]
         type_id: String,
         fields: Vec<(String, FieldDesc)>,
     },
@@ -127,7 +129,7 @@ pub fn read_bitset<'a>(cur: &mut &'a [u8]) -> Option<&'a [u8]> {
 fn bit_set(bits: &[u8], i: usize) -> bool {
     let byte_idx = i / 8;
     let bit_idx = i % 8;
-    bits.get(byte_idx).map_or(false, |b| (b >> bit_idx) & 1 == 1)
+    bits.get(byte_idx).is_some_and(|b| (b >> bit_idx) & 1 == 1)
 }
 
 // ── Value decode ──────────────────────────────────────────────────────────
