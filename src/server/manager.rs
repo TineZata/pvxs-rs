@@ -10,6 +10,15 @@ use crate::{
 };
 use crossbeam_channel as channel;
 use std::collections::HashMap;
+use tokio::sync::mpsc as tokio_mpsc;
+
+/// A value-change update pushed to a live TCP monitor subscriber.
+pub struct MonitorPush {
+    /// Operation ID identifying the monitor subscription on the wire.
+    pub ioid: u32,
+    /// Pre-encoded BitSet + value bytes ready to append to a MONITOR data frame.
+    pub payload: Vec<u8>,
+}
 
 /// In-memory state for a single managed PV.
 pub(super) enum ManagedPvState {
@@ -299,6 +308,24 @@ pub enum ManagerCommand {
         /// Worker reply channel.
         reply: channel::Sender<Result<FetchedEnum>>,
     },
+    /// Register a monitor subscription; returns the subscription ID.
+    SubscribeMonitor {
+        /// PV name to subscribe to.
+        pv_name: String,
+        /// Wire operation ID for this subscription.
+        ioid: u32,
+        /// Sender half of the connection's push channel.
+        tx: tokio_mpsc::UnboundedSender<MonitorPush>,
+        /// Reply channel that receives the allocated subscription ID.
+        reply: channel::Sender<u64>,
+    },
+    /// Cancel a monitor subscription by ID.
+    UnsubscribeMonitor {
+        /// PV name the subscription was registered under.
+        pv_name: String,
+        /// Subscription ID returned by `SubscribeMonitor`.
+        sub_id: u64,
+    },
     /// Stop the worker loop and clear the registry.
     Stop {
         /// Worker reply channel.
@@ -310,9 +337,80 @@ pub enum ManagerCommand {
 // Worker loop
 // ============================================================================
 
+fn encode_state_payload(state: &ManagedPvState) -> Option<Vec<u8>> {
+    use crate::proto::encode_string;
+    match state {
+        ManagedPvState::Double { value, .. } => {
+            let mut out = vec![1u8, 0b0000_0011u8];
+            out.extend_from_slice(&value.to_bits().to_le_bytes());
+            Some(out)
+        }
+        ManagedPvState::Int32 { value, .. } => {
+            let mut out = vec![1u8, 0b0000_0011u8];
+            out.extend_from_slice(&value.to_le_bytes());
+            Some(out)
+        }
+        ManagedPvState::Str { value, .. } => {
+            let mut out = vec![1u8, 0b0000_0011u8];
+            encode_string(value, &mut out);
+            Some(out)
+        }
+        ManagedPvState::Enum { value, choices, .. } => {
+            let mut out = vec![1u8, 0b0000_1111u8];
+            out.extend_from_slice(&value.to_le_bytes());
+            out.extend_from_slice(&value.to_le_bytes()); // value.index mirrors value
+            out.extend_from_slice(&(choices.len() as u32).to_le_bytes());
+            for choice in choices {
+                encode_string(choice, &mut out);
+            }
+            Some(out)
+        }
+        ManagedPvState::DoubleArray { value, .. } => {
+            let mut out = vec![1u8, 0b0000_0011u8];
+            out.extend_from_slice(&(value.len() as u32).to_le_bytes());
+            for x in value {
+                out.extend_from_slice(&x.to_bits().to_le_bytes());
+            }
+            Some(out)
+        }
+        ManagedPvState::Int32Array { value, .. } => {
+            let mut out = vec![1u8, 0b0000_0011u8];
+            out.extend_from_slice(&(value.len() as u32).to_le_bytes());
+            for x in value {
+                out.extend_from_slice(&x.to_le_bytes());
+            }
+            Some(out)
+        }
+        ManagedPvState::StrArray { value, .. } => {
+            let mut out = vec![1u8, 0b0000_0011u8];
+            out.extend_from_slice(&(value.len() as u32).to_le_bytes());
+            for x in value {
+                encode_string(x, &mut out);
+            }
+            Some(out)
+        }
+    }
+}
+
+type MonitorSubs = HashMap<String, Vec<(u64, u32, tokio_mpsc::UnboundedSender<MonitorPush>)>>;
+
+fn fan_out(subs: &mut MonitorSubs, name: &str, payload: Vec<u8>) {
+    if let Some(list) = subs.get_mut(name) {
+        list.retain(|(_, ioid, tx)| {
+            tx.send(MonitorPush {
+                ioid: *ioid,
+                payload: payload.clone(),
+            })
+            .is_ok()
+        });
+    }
+}
+
 /// Run the in-memory PV registry worker loop.
 pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
     let mut pvs: HashMap<String, ManagedPvState> = HashMap::new();
+    let mut monitor_subs: MonitorSubs = HashMap::new();
+    let mut sub_counter: u64 = 1;
 
     while let Ok(cmd) = rx.recv() {
         match cmd {
@@ -553,6 +651,11 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                     }
                     Some(_) => Err(PvxsError::new(format!("PV '{}' is not a double", name))),
                 };
+                if result.is_ok() {
+                    if let Some(pl) = pvs.get(&name).and_then(encode_state_payload) {
+                        fan_out(&mut monitor_subs, &name, pl);
+                    }
+                }
                 let _ = reply.send(result);
             }
 
@@ -576,6 +679,11 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                         name
                     ))),
                 };
+                if result.is_ok() {
+                    if let Some(pl) = pvs.get(&name).and_then(encode_state_payload) {
+                        fan_out(&mut monitor_subs, &name, pl);
+                    }
+                }
                 let _ = reply.send(result);
             }
 
@@ -608,6 +716,11 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                     }
                     Some(_) => Err(PvxsError::new(format!("PV '{}' is not an int32", name))),
                 };
+                if result.is_ok() {
+                    if let Some(pl) = pvs.get(&name).and_then(encode_state_payload) {
+                        fan_out(&mut monitor_subs, &name, pl);
+                    }
+                }
                 let _ = reply.send(result);
             }
 
@@ -631,6 +744,11 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                         name
                     ))),
                 };
+                if result.is_ok() {
+                    if let Some(pl) = pvs.get(&name).and_then(encode_state_payload) {
+                        fan_out(&mut monitor_subs, &name, pl);
+                    }
+                }
                 let _ = reply.send(result);
             }
 
@@ -651,6 +769,11 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                     }
                     Some(_) => Err(PvxsError::new(format!("PV '{}' is not a string", name))),
                 };
+                if result.is_ok() {
+                    if let Some(pl) = pvs.get(&name).and_then(encode_state_payload) {
+                        fan_out(&mut monitor_subs, &name, pl);
+                    }
+                }
                 let _ = reply.send(result);
             }
 
@@ -674,6 +797,11 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                         name
                     ))),
                 };
+                if result.is_ok() {
+                    if let Some(pl) = pvs.get(&name).and_then(encode_state_payload) {
+                        fan_out(&mut monitor_subs, &name, pl);
+                    }
+                }
                 let _ = reply.send(result);
             }
 
@@ -697,6 +825,11 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                     }
                     Some(_) => Err(PvxsError::new(format!("PV '{}' is not an enum", name))),
                 };
+                if result.is_ok() {
+                    if let Some(pl) = pvs.get(&name).and_then(encode_state_payload) {
+                        fan_out(&mut monitor_subs, &name, pl);
+                    }
+                }
                 let _ = reply.send(result);
             }
 
@@ -923,6 +1056,28 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                     None => Err(PvxsError::new(format!("PV '{}' not found", name))),
                 };
                 let _ = reply.send(result);
+            }
+
+            // ── Monitor subscriptions ───────────────────────────────────────
+            ManagerCommand::SubscribeMonitor {
+                pv_name,
+                ioid,
+                tx,
+                reply,
+            } => {
+                let sub_id = sub_counter;
+                sub_counter += 1;
+                monitor_subs
+                    .entry(pv_name)
+                    .or_default()
+                    .push((sub_id, ioid, tx));
+                let _ = reply.send(sub_id);
+            }
+
+            ManagerCommand::UnsubscribeMonitor { pv_name, sub_id } => {
+                if let Some(list) = monitor_subs.get_mut(&pv_name) {
+                    list.retain(|(id, _, _)| *id != sub_id);
+                }
             }
 
             // ── Stop ────────────────────────────────────────────────────────

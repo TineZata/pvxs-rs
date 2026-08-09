@@ -553,15 +553,20 @@ async fn handle_client(
     use std::collections::HashMap;
     let mut channels: HashMap<u32, ChannelInfo> = HashMap::new();
     let mut sid_next: u32 = 1;
+    let (push_tx, mut push_rx) =
+        tokio::sync::mpsc::unbounded_channel::<manager::MonitorPush>();
+    // active_monitors: ioid → (sid, pv_name, sub_id)
+    let mut active_monitors: HashMap<u32, (u32, String, u64)> = HashMap::new();
 
     loop {
-        let frame = read_frame(&mut stream).await;
-        let (_, cmd, payload) = match frame {
-            Ok(f) => f,
-            Err(_) => break,
-        };
+        tokio::select! {
+            frame = read_frame(&mut stream) => {
+                let (_, cmd, payload) = match frame {
+                    Ok(f) => f,
+                    Err(_) => break,
+                };
 
-        match cmd {
+                match cmd {
             CMD_CREATE_CHANNEL => {
                 let mut cur = payload.as_slice();
                 if cur.len() < 2 {
@@ -687,6 +692,7 @@ async fn handle_client(
 
                 if let Some(ch) = channels.get(&sid) {
                     if subcmd & 0x08 != 0 {
+                        // INIT: send type descriptor.
                         let mut resp = Vec::new();
                         resp.extend_from_slice(&ioid.to_le_bytes());
                         resp.push(subcmd);
@@ -696,7 +702,7 @@ async fn handle_client(
                             .write_all(&make_frame(true, CMD_MONITOR, resp))
                             .await?;
                     } else if subcmd & 0x04 != 0 {
-                        // START: send one immediate sample.
+                        // START: send initial value and subscribe for future pushes.
                         let mut resp = Vec::new();
                         resp.extend_from_slice(&ioid.to_le_bytes());
                         resp.push(0x00);
@@ -707,11 +713,34 @@ async fn handle_client(
                         stream
                             .write_all(&make_frame(true, CMD_MONITOR, resp))
                             .await?;
+                        let (reply_tx, reply_rx) = channel::bounded(1);
+                        let _ = tx.send(ManagerCommand::SubscribeMonitor {
+                            pv_name: ch.pv_name.clone(),
+                            ioid,
+                            tx: push_tx.clone(),
+                            reply: reply_tx,
+                        });
+                        if let Ok(sub_id) = reply_rx.recv() {
+                            active_monitors.insert(ioid, (sid, ch.pv_name.clone(), sub_id));
+                        }
+                    } else if subcmd & 0x40 != 0 {
+                        // STOP: cancel subscription.
+                        if let Some((_, pv_name, sub_id)) = active_monitors.remove(&ioid) {
+                            let _ = tx.send(ManagerCommand::UnsubscribeMonitor { pv_name, sub_id });
+                        }
                     }
                 }
             }
 
-            CMD_DESTROY_REQUEST => {}
+            CMD_DESTROY_REQUEST => {
+                let mut cur = payload.as_slice();
+                let _ = read_u32_le(&mut cur); // sid (unused here)
+                if let Some(ioid) = read_u32_le(&mut cur) {
+                    if let Some((_, pv_name, sub_id)) = active_monitors.remove(&ioid) {
+                        let _ = tx.send(ManagerCommand::UnsubscribeMonitor { pv_name, sub_id });
+                    }
+                }
+            }
             CMD_DESTROY_CHANNEL => {
                 let mut cur = payload.as_slice();
                 let cid = match read_u32_le(&mut cur) {
@@ -724,11 +753,43 @@ async fn handle_client(
                 };
                 if let Some(ch) = channels.get(&sid) {
                     if ch.cid == cid && ch.sid == sid {
+                        let to_unsub: Vec<_> = active_monitors
+                            .iter()
+                            .filter(|(_, (s, _, _))| *s == sid)
+                            .map(|(ioid, (_, pv, sub))| (*ioid, pv.clone(), *sub))
+                            .collect();
+                        for (ioid, pv_name, sub_id) in to_unsub {
+                            active_monitors.remove(&ioid);
+                            let _ = tx.send(ManagerCommand::UnsubscribeMonitor {
+                                pv_name,
+                                sub_id,
+                            });
+                        }
                         channels.remove(&sid);
                     }
                 }
             }
             _ => {}
+        }
+            }
+            push = push_rx.recv() => {
+                if let Some(manager::MonitorPush { ioid, payload: push_payload }) = push {
+                    let mut resp = Vec::new();
+                    resp.extend_from_slice(&ioid.to_le_bytes());
+                    resp.push(0x00); // subcmd = data
+                    resp.extend_from_slice(&status_ok());
+                    resp.extend_from_slice(&push_payload);
+                    if stream
+                        .write_all(&make_frame(true, CMD_MONITOR, resp))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
         }
     }
 

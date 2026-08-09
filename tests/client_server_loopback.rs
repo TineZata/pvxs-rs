@@ -112,6 +112,38 @@ fn monitor_receives_initial_sample_on_start() {
 }
 
 #[test]
+fn concurrent_monitors_receive_initial_sample() {
+    let _guard = lock_env();
+
+    let server = Server::start_isolated().expect("server start");
+    server
+        .create_pv_double("pv:mon:concurrent", 9.5, NTScalarMetadataBuilder::new())
+        .expect("create pv");
+
+    let mut ctx = setup_client_for(&server);
+    let mut monitors = Vec::new();
+    for _ in 0..16 {
+        let mut monitor = ctx
+            .monitor("pv:mon:concurrent")
+            .expect("monitor create");
+        monitor.start().expect("monitor start");
+        monitors.push(monitor);
+    }
+
+    for monitor in &mut monitors {
+        let sample = monitor
+            .get_update(3.0)
+            .expect("concurrent monitor initial sample");
+        assert!((sample.get_field_double("value").expect("value") - 9.5).abs() < 1e-12);
+    }
+
+    for monitor in &mut monitors {
+        monitor.stop().expect("monitor stop");
+    }
+    server.stop_drop().expect("server stop");
+}
+
+#[test]
 fn get_missing_pv_returns_error() {
     let _guard = lock_env();
 
