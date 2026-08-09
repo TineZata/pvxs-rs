@@ -222,7 +222,7 @@ impl Context {
 
     /// Create an RPC builder for a named service PV.
     ///
-    /// TODO(network): pvAccess TCP transport not yet implemented.
+    /// RPC execution transport is not yet implemented.
     pub fn rpc(&mut self, pv_name: &str) -> Result<Rpc> {
         Ok(Rpc::new(pv_name.to_string()))
     }

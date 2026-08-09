@@ -7,17 +7,15 @@
 //!
 //! # Network status
 //!
-//! The in-process state machine (value conversion, alarm, metadata) is fully
-//! implemented in pure Rust.  The TCP/UDP pvAccess transport layer is a
-//! TODO — see TODO.md for the implementation plan.  All network-bound
-//! methods return `Err(PvxsError)` until that layer lands.
+//! UDP discovery and TCP GET, PUT, and Monitor operations are implemented.
+//! RPC transport remains incomplete; see `TODO.md`.
 
-pub (crate) mod context;
-pub (crate) mod monitor;
-pub (crate) mod rpc;
-pub (crate) mod config;
+pub(crate) mod config;
+pub(crate) mod context;
+pub(crate) mod monitor;
+pub(crate) mod rpc;
 
+pub use self::config::ClientConfig;
 pub use self::context::Context;
 pub use self::monitor::{Monitor, MonitorBuilder, MonitorEvent};
 pub use self::rpc::Rpc;
-pub use self::config::ClientConfig;

@@ -45,9 +45,9 @@ pub mod server;
 /// Dynamic value container and field access helpers.
 pub mod value;
 
+pub(crate) mod net;
 pub(crate) mod proto;
 pub(crate) mod pvdata;
-pub(crate) mod net;
 
 use std::fmt;
 
@@ -59,8 +59,8 @@ pub use server::{
     FetchedStringArray, NTEnumMetadataBuilder, NTScalarMetadataBuilder, Server, ServerHandle,
     SharedPV, StaticSource,
 };
-pub use value::{FieldType, Value};
 pub use std::sync::atomic::{AtomicUsize, Ordering};
+pub use value::{FieldType, Value};
 
 /// Convenience type alias — every fallible operation in this crate returns this.
 pub type Result<T> = std::result::Result<T, PvxsError>;

@@ -7,7 +7,7 @@ use crate::{PvxsError, Result, Value};
 ///
 /// Mirrors `pvxs-sys::Rpc` exactly.
 ///
-/// TODO(network): pvAccess TCP transport not yet implemented.
+/// RPC execution transport is not yet implemented.
 pub struct Rpc {
     _name: String,
     _args: Value,
@@ -47,10 +47,10 @@ impl Rpc {
 
     /// Execute the RPC synchronously.
     ///
-    /// TODO(network): pvAccess TCP transport not yet implemented.
+    /// RPC execution transport is not yet implemented.
     pub fn execute(self, _timeout: f64) -> Result<Value> {
         Err(PvxsError::new(
-            "pvAccess network transport not yet implemented — see TODO.md",
+            "pvAccess RPC transport not yet implemented — see TODO.md",
         ))
     }
 }
