@@ -16,17 +16,18 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
+use tokio::task::JoinSet;
 
-use crate::{AlarmMetadata, AlarmSeverity, AlarmStatus,
-    ControlMetadata, DisplayMetadata, PvxsError, Result,
+use crate::{
+    AlarmMetadata, AlarmSeverity, AlarmStatus, ControlMetadata, DisplayMetadata, PvxsError, Result,
 };
-pub(crate) mod ntscalar;
+pub(crate) mod manager;
 pub(crate) mod ntenum;
-pub (crate) mod manager;
+pub(crate) mod ntscalar;
 
-pub use self::ntscalar::NTScalarMetadataBuilder;
+pub use self::manager::{run_worker, ManagerCommand};
 pub use self::ntenum::NTEnumMetadataBuilder;
-pub use self::manager::{ManagerCommand, run_worker};
+pub use self::ntscalar::NTScalarMetadataBuilder;
 
 use crate::proto::{
     decode_header, decode_size, decode_string, encode_header, encode_size, encode_string,
@@ -263,7 +264,10 @@ fn value_desc_for(ty: ChannelType) -> Vec<u8> {
     }
 }
 
-fn encode_current_value_payload(tx: &channel::Sender<ManagerCommand>, ch: &ChannelInfo) -> Option<Vec<u8>> {
+fn encode_current_value_payload(
+    tx: &channel::Sender<ManagerCommand>,
+    ch: &ChannelInfo,
+) -> Option<Vec<u8>> {
     let mut out = if ch.ty == ChannelType::Enum {
         bitset_enum_present()
     } else {
@@ -272,25 +276,37 @@ fn encode_current_value_payload(tx: &channel::Sender<ManagerCommand>, ch: &Chann
     match ch.ty {
         ChannelType::Double => {
             let (r_tx, r_rx) = channel::bounded(1);
-            let _ = tx.send(ManagerCommand::FetchDouble { name: ch.pv_name.clone(), reply: r_tx });
+            let _ = tx.send(ManagerCommand::FetchDouble {
+                name: ch.pv_name.clone(),
+                reply: r_tx,
+            });
             let v = r_rx.recv().ok()?.ok()?;
             out.extend_from_slice(&v.value.to_bits().to_le_bytes());
         }
         ChannelType::Int32 => {
             let (r_tx, r_rx) = channel::bounded(1);
-            let _ = tx.send(ManagerCommand::FetchInt32 { name: ch.pv_name.clone(), reply: r_tx });
+            let _ = tx.send(ManagerCommand::FetchInt32 {
+                name: ch.pv_name.clone(),
+                reply: r_tx,
+            });
             let v = r_rx.recv().ok()?.ok()?;
             out.extend_from_slice(&v.value.to_le_bytes());
         }
         ChannelType::String => {
             let (r_tx, r_rx) = channel::bounded(1);
-            let _ = tx.send(ManagerCommand::FetchString { name: ch.pv_name.clone(), reply: r_tx });
+            let _ = tx.send(ManagerCommand::FetchString {
+                name: ch.pv_name.clone(),
+                reply: r_tx,
+            });
             let v = r_rx.recv().ok()?.ok()?;
             encode_string(&v.value, &mut out);
         }
         ChannelType::Enum => {
             let (r_tx, r_rx) = channel::bounded(1);
-            let _ = tx.send(ManagerCommand::FetchEnum { name: ch.pv_name.clone(), reply: r_tx });
+            let _ = tx.send(ManagerCommand::FetchEnum {
+                name: ch.pv_name.clone(),
+                reply: r_tx,
+            });
             let v = r_rx.recv().ok()?.ok()?;
             out.extend_from_slice(&v.value.to_le_bytes());
             out.extend_from_slice(&v.value.to_le_bytes());
@@ -301,7 +317,10 @@ fn encode_current_value_payload(tx: &channel::Sender<ManagerCommand>, ch: &Chann
         }
         ChannelType::DoubleArray => {
             let (r_tx, r_rx) = channel::bounded(1);
-            let _ = tx.send(ManagerCommand::FetchDoubleArray { name: ch.pv_name.clone(), reply: r_tx });
+            let _ = tx.send(ManagerCommand::FetchDoubleArray {
+                name: ch.pv_name.clone(),
+                reply: r_tx,
+            });
             let v = r_rx.recv().ok()?.ok()?;
             out.extend_from_slice(&(v.value.len() as u32).to_le_bytes());
             for x in &v.value {
@@ -310,7 +329,10 @@ fn encode_current_value_payload(tx: &channel::Sender<ManagerCommand>, ch: &Chann
         }
         ChannelType::Int32Array => {
             let (r_tx, r_rx) = channel::bounded(1);
-            let _ = tx.send(ManagerCommand::FetchInt32Array { name: ch.pv_name.clone(), reply: r_tx });
+            let _ = tx.send(ManagerCommand::FetchInt32Array {
+                name: ch.pv_name.clone(),
+                reply: r_tx,
+            });
             let v = r_rx.recv().ok()?.ok()?;
             out.extend_from_slice(&(v.value.len() as u32).to_le_bytes());
             for x in &v.value {
@@ -319,7 +341,10 @@ fn encode_current_value_payload(tx: &channel::Sender<ManagerCommand>, ch: &Chann
         }
         ChannelType::StringArray => {
             let (r_tx, r_rx) = channel::bounded(1);
-            let _ = tx.send(ManagerCommand::FetchStringArray { name: ch.pv_name.clone(), reply: r_tx });
+            let _ = tx.send(ManagerCommand::FetchStringArray {
+                name: ch.pv_name.clone(),
+                reply: r_tx,
+            });
             let v = r_rx.recv().ok()?.ok()?;
             out.extend_from_slice(&(v.value.len() as u32).to_le_bytes());
             for x in &v.value {
@@ -346,24 +371,39 @@ fn decode_put_and_apply(
             if cur.len() < 8 {
                 return Err("PUT double payload too short".to_string());
             }
-            let bits = u64::from_le_bytes([cur[0], cur[1], cur[2], cur[3], cur[4], cur[5], cur[6], cur[7]]);
+            let bits = u64::from_le_bytes([
+                cur[0], cur[1], cur[2], cur[3], cur[4], cur[5], cur[6], cur[7],
+            ]);
             let value = f64::from_bits(bits);
             *cur = &cur[8..];
             if !cur.is_empty() {
                 return Err("PUT payload type mismatch".to_string());
             }
             let (r_tx, r_rx) = channel::bounded(1);
-            let _ = tx.send(ManagerCommand::PostDouble { name: ch.pv_name.clone(), value, reply: r_tx });
-            r_rx.recv().map_err(|_| "server worker stopped".to_string())?.map_err(|e| e.to_string())
+            let _ = tx.send(ManagerCommand::PostDouble {
+                name: ch.pv_name.clone(),
+                value,
+                reply: r_tx,
+            });
+            r_rx.recv()
+                .map_err(|_| "server worker stopped".to_string())?
+                .map_err(|e| e.to_string())
         }
         ChannelType::Int32 => {
-            let value = read_i32_le(cur).ok_or_else(|| "PUT int32 payload too short".to_string())?;
+            let value =
+                read_i32_le(cur).ok_or_else(|| "PUT int32 payload too short".to_string())?;
             if !cur.is_empty() {
                 return Err("PUT payload type mismatch".to_string());
             }
             let (r_tx, r_rx) = channel::bounded(1);
-            let _ = tx.send(ManagerCommand::PostInt32 { name: ch.pv_name.clone(), value, reply: r_tx });
-            r_rx.recv().map_err(|_| "server worker stopped".to_string())?.map_err(|e| e.to_string())
+            let _ = tx.send(ManagerCommand::PostInt32 {
+                name: ch.pv_name.clone(),
+                value,
+                reply: r_tx,
+            });
+            r_rx.recv()
+                .map_err(|_| "server worker stopped".to_string())?
+                .map_err(|e| e.to_string())
         }
         ChannelType::String => {
             let value = decode_string(cur).ok_or_else(|| "PUT string decode failed".to_string())?;
@@ -371,8 +411,14 @@ fn decode_put_and_apply(
                 return Err("PUT payload type mismatch".to_string());
             }
             let (r_tx, r_rx) = channel::bounded(1);
-            let _ = tx.send(ManagerCommand::PostString { name: ch.pv_name.clone(), value, reply: r_tx });
-            r_rx.recv().map_err(|_| "server worker stopped".to_string())?.map_err(|e| e.to_string())
+            let _ = tx.send(ManagerCommand::PostString {
+                name: ch.pv_name.clone(),
+                value,
+                reply: r_tx,
+            });
+            r_rx.recv()
+                .map_err(|_| "server worker stopped".to_string())?
+                .map_err(|e| e.to_string())
         }
         ChannelType::Enum => {
             if cur.len() < 2 {
@@ -384,17 +430,26 @@ fn decode_put_and_apply(
                 return Err("PUT payload type mismatch".to_string());
             }
             let (r_tx, r_rx) = channel::bounded(1);
-            let _ = tx.send(ManagerCommand::PostEnum { name: ch.pv_name.clone(), value, reply: r_tx });
-            r_rx.recv().map_err(|_| "server worker stopped".to_string())?.map_err(|e| e.to_string())
+            let _ = tx.send(ManagerCommand::PostEnum {
+                name: ch.pv_name.clone(),
+                value,
+                reply: r_tx,
+            });
+            r_rx.recv()
+                .map_err(|_| "server worker stopped".to_string())?
+                .map_err(|e| e.to_string())
         }
         ChannelType::DoubleArray => {
-            let n = read_u32_le(cur).ok_or_else(|| "PUT double[] missing count".to_string())? as usize;
+            let n =
+                read_u32_le(cur).ok_or_else(|| "PUT double[] missing count".to_string())? as usize;
             let mut values = Vec::with_capacity(n);
             for _ in 0..n {
                 if cur.len() < 8 {
                     return Err("PUT double[] truncated".to_string());
                 }
-                let bits = u64::from_le_bytes([cur[0], cur[1], cur[2], cur[3], cur[4], cur[5], cur[6], cur[7]]);
+                let bits = u64::from_le_bytes([
+                    cur[0], cur[1], cur[2], cur[3], cur[4], cur[5], cur[6], cur[7],
+                ]);
                 *cur = &cur[8..];
                 values.push(f64::from_bits(bits));
             }
@@ -402,11 +457,18 @@ fn decode_put_and_apply(
                 return Err("PUT payload type mismatch".to_string());
             }
             let (r_tx, r_rx) = channel::bounded(1);
-            let _ = tx.send(ManagerCommand::PostDoubleArray { name: ch.pv_name.clone(), value: values, reply: r_tx });
-            r_rx.recv().map_err(|_| "server worker stopped".to_string())?.map_err(|e| e.to_string())
+            let _ = tx.send(ManagerCommand::PostDoubleArray {
+                name: ch.pv_name.clone(),
+                value: values,
+                reply: r_tx,
+            });
+            r_rx.recv()
+                .map_err(|_| "server worker stopped".to_string())?
+                .map_err(|e| e.to_string())
         }
         ChannelType::Int32Array => {
-            let n = read_u32_le(cur).ok_or_else(|| "PUT int32[] missing count".to_string())? as usize;
+            let n =
+                read_u32_le(cur).ok_or_else(|| "PUT int32[] missing count".to_string())? as usize;
             let mut values = Vec::with_capacity(n);
             for _ in 0..n {
                 let v = read_i32_le(cur).ok_or_else(|| "PUT int32[] truncated".to_string())?;
@@ -416,22 +478,36 @@ fn decode_put_and_apply(
                 return Err("PUT payload type mismatch".to_string());
             }
             let (r_tx, r_rx) = channel::bounded(1);
-            let _ = tx.send(ManagerCommand::PostInt32Array { name: ch.pv_name.clone(), value: values, reply: r_tx });
-            r_rx.recv().map_err(|_| "server worker stopped".to_string())?.map_err(|e| e.to_string())
+            let _ = tx.send(ManagerCommand::PostInt32Array {
+                name: ch.pv_name.clone(),
+                value: values,
+                reply: r_tx,
+            });
+            r_rx.recv()
+                .map_err(|_| "server worker stopped".to_string())?
+                .map_err(|e| e.to_string())
         }
         ChannelType::StringArray => {
-            let n = read_u32_le(cur).ok_or_else(|| "PUT string[] missing count".to_string())? as usize;
+            let n =
+                read_u32_le(cur).ok_or_else(|| "PUT string[] missing count".to_string())? as usize;
             let mut values = Vec::with_capacity(n);
             for _ in 0..n {
-                let v = decode_string(cur).ok_or_else(|| "PUT string[] decode failed".to_string())?;
+                let v =
+                    decode_string(cur).ok_or_else(|| "PUT string[] decode failed".to_string())?;
                 values.push(v);
             }
             if !cur.is_empty() {
                 return Err("PUT payload type mismatch".to_string());
             }
             let (r_tx, r_rx) = channel::bounded(1);
-            let _ = tx.send(ManagerCommand::PostStringArray { name: ch.pv_name.clone(), value: values, reply: r_tx });
-            r_rx.recv().map_err(|_| "server worker stopped".to_string())?.map_err(|e| e.to_string())
+            let _ = tx.send(ManagerCommand::PostStringArray {
+                name: ch.pv_name.clone(),
+                value: values,
+                reply: r_tx,
+            });
+            r_rx.recv()
+                .map_err(|_| "server worker stopped".to_string())?
+                .map_err(|e| e.to_string())
         }
     }
 }
@@ -454,7 +530,10 @@ fn make_frame(from_server: bool, cmd: u8, payload: Vec<u8>) -> Vec<u8> {
     out
 }
 
-async fn handle_client(mut stream: TcpStream, tx: channel::Sender<ManagerCommand>) -> std::io::Result<()> {
+async fn handle_client(
+    mut stream: TcpStream,
+    tx: channel::Sender<ManagerCommand>,
+) -> std::io::Result<()> {
     let mut validation = Vec::new();
     validation.extend_from_slice(&(16u32 * 1024 * 1024).to_le_bytes());
     validation.extend_from_slice(&0x10u16.to_le_bytes());
@@ -841,11 +920,7 @@ impl SharedPV {
     }
 
     /// Open a string value for this shared PV.
-    pub fn open_string(
-        &mut self,
-        value: &str,
-        _metadata: NTScalarMetadataBuilder,
-    ) -> Result<()> {
+    pub fn open_string(&mut self, value: &str, _metadata: NTScalarMetadataBuilder) -> Result<()> {
         self.value = Some(crate::Value::nt_scalar_string(value));
         Ok(())
     }
@@ -920,9 +995,9 @@ impl StaticSource {
 #[derive(Clone)]
 pub struct ServerHandle {
     tx: channel::Sender<ManagerCommand>,
-    /// TODO(network): will be the real TCP port once the transport layer lands.
+    /// Bound TCP port used by the pvAccess server.
     tcp_port: u16,
-    /// TODO(network): will be the real UDP port once the transport layer lands.
+    /// Bound UDP port used for pvAccess discovery.
     udp_port: u16,
 }
 
@@ -1368,8 +1443,7 @@ impl ServerHandle {
 /// Pure-Rust pvAccess server with automatic alarm management.
 ///
 /// Mirrors `pvxs-sys::Server` exactly — same method names and signatures.
-/// The in-process PV registry is fully functional.
-/// The pvAccess TCP/UDP transport layer is a TODO — see TODO.md.
+/// The in-process registry and pvAccess TCP/UDP transport are functional.
 pub struct Server {
     handle: ServerHandle,
     join: Option<thread::JoinHandle<()>>,
@@ -1381,8 +1455,6 @@ pub struct Server {
 
 impl Server {
     /// Start a server configured from environment variables.
-    ///
-    /// TODO(network): no TCP/UDP port is bound yet; `tcp_port()` returns 0.
     pub fn start_from_env() -> Result<Self> {
         let udp_port = std::env::var("EPICS_PVA_BROADCAST_PORT")
             .ok()
@@ -1396,8 +1468,6 @@ impl Server {
     }
 
     /// Start an isolated server (system-assigned ports, ideal for tests).
-    ///
-    /// TODO(network): no TCP/UDP port is bound yet; `tcp_port()` returns 0.
     pub fn start_isolated() -> Result<Self> {
         Self::start_inner(0, 0)
     }
@@ -1523,6 +1593,7 @@ impl Server {
                 };
                 let port = listener.local_addr().ok().map(|a| a.port()).unwrap_or(0);
                 let _ = tcp_ready_tx.send(port);
+                let mut connections = JoinSet::new();
 
                 loop {
                     tokio::select! {
@@ -1537,12 +1608,18 @@ impl Server {
                                 Err(_) => continue,
                             };
                             let tx = tx_for_tcp.clone();
-                            tokio::spawn(async move {
+                            connections.spawn(async move {
                                 let _ = handle_client(stream, tx).await;
                             });
                         }
+                        completed = connections.join_next(), if !connections.is_empty() => {
+                            let _ = completed;
+                        }
                     }
                 }
+
+                connections.abort_all();
+                while connections.join_next().await.is_some() {}
             });
         });
 
@@ -1551,7 +1628,11 @@ impl Server {
             .unwrap_or(0);
         tcp_port_shared.store(tcp_port, Ordering::Relaxed);
 
-        let beacon_dest_port = if udp_bind_port == 0 { udp_port } else { udp_bind_port };
+        let beacon_dest_port = if udp_bind_port == 0 {
+            udp_port
+        } else {
+            udp_bind_port
+        };
 
         let beacon_join = thread::spawn(move || {
             let rt = match tokio::runtime::Builder::new_current_thread()
@@ -1564,7 +1645,8 @@ impl Server {
             };
 
             rt.block_on(async move {
-                let beacon_sock = epics_libcom_rs::net::AsyncUdpV4::bind_ephemeral_same_port(true).ok();
+                let beacon_sock =
+                    epics_libcom_rs::net::AsyncUdpV4::bind_ephemeral_same_port(true).ok();
                 let beacon_dest = SocketAddr::V4(SocketAddrV4::new(
                     Ipv4Addr::new(255, 255, 255, 255),
                     beacon_dest_port,
@@ -1899,13 +1981,8 @@ mod tests {
     #[test]
     fn create_and_fetch_enum() {
         let s = server();
-        s.create_pv_enum(
-            "F",
-            vec!["OFF", "ON"],
-            1,
-            NTEnumMetadataBuilder::new(),
-        )
-        .unwrap();
+        s.create_pv_enum("F", vec!["OFF", "ON"], 1, NTEnumMetadataBuilder::new())
+            .unwrap();
         let f = s.fetch_enum("F").unwrap();
         assert_eq!(f.value, 1);
         assert_eq!(f.value_choices, vec!["OFF", "ON"]);

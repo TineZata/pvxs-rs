@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: MPL-2.0
 use crate::{PvxsError, Result};
 
-use crate::alarms::{AlarmSeverity, AlarmStatus, AlarmConfig,
-    compute_alarm_for_scalar};
+use crate::alarms::{compute_alarm_for_scalar, AlarmConfig, AlarmSeverity, AlarmStatus};
 use crate::metadata::{AlarmMetadata, ControlMetadata, DisplayMetadata};
-use crate::{NTScalarMetadataBuilder, NTEnumMetadataBuilder, 
-    FetchedDouble, FetchedInt32, FetchedString, FetchedDoubleArray, 
-    FetchedInt32Array, FetchedStringArray, FetchedEnum};
+use crate::{
+    FetchedDouble, FetchedDoubleArray, FetchedEnum, FetchedInt32, FetchedInt32Array, FetchedString,
+    FetchedStringArray, NTEnumMetadataBuilder, NTScalarMetadataBuilder,
+};
 use crossbeam_channel as channel;
 use std::collections::HashMap;
 
@@ -317,7 +317,6 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
     while let Ok(cmd) = rx.recv() {
         match cmd {
             // ── Create ──────────────────────────────────────────────────────
-
             ManagerCommand::CreateDouble {
                 name,
                 initial,
@@ -525,7 +524,6 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
             }
 
             // ── Post ────────────────────────────────────────────────────────
-
             ManagerCommand::PostDouble { name, value, reply } => {
                 let result = match pvs.get_mut(&name) {
                     None => Err(PvxsError::new(format!("PV '{}' not found", name))),
@@ -541,16 +539,16 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                         if *readonly {
                             Err(PvxsError::new(format!("PV '{}' is readonly", name)))
                         } else {
-                        let ar = compute_alarm_for_scalar(value, alarm_config);
-                        if !ar.allow {
-                            Err(PvxsError::new(ar.message))
-                        } else {
-                            *stored = value;
-                            *alarm_severity = ar.severity;
-                            *alarm_status = ar.status;
-                            *alarm_message = ar.message;
-                            Ok(())
-                        }
+                            let ar = compute_alarm_for_scalar(value, alarm_config);
+                            if !ar.allow {
+                                Err(PvxsError::new(ar.message))
+                            } else {
+                                *stored = value;
+                                *alarm_severity = ar.severity;
+                                *alarm_status = ar.status;
+                                *alarm_message = ar.message;
+                                Ok(())
+                            }
                         }
                     }
                     Some(_) => Err(PvxsError::new(format!("PV '{}' is not a double", name))),
@@ -596,16 +594,16 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
                         if *readonly {
                             Err(PvxsError::new(format!("PV '{}' is readonly", name)))
                         } else {
-                        let ar = compute_alarm_for_scalar(value as f64, alarm_config);
-                        if !ar.allow {
-                            Err(PvxsError::new(ar.message))
-                        } else {
-                            *stored = value;
-                            *alarm_severity = ar.severity;
-                            *alarm_status = ar.status;
-                            *alarm_message = ar.message;
-                            Ok(())
-                        }
+                            let ar = compute_alarm_for_scalar(value as f64, alarm_config);
+                            if !ar.allow {
+                                Err(PvxsError::new(ar.message))
+                            } else {
+                                *stored = value;
+                                *alarm_severity = ar.severity;
+                                *alarm_status = ar.status;
+                                *alarm_message = ar.message;
+                                Ok(())
+                            }
                         }
                     }
                     Some(_) => Err(PvxsError::new(format!("PV '{}' is not an int32", name))),
@@ -703,7 +701,6 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
             }
 
             // ── Remove ──────────────────────────────────────────────────────
-
             ManagerCommand::Remove { name, reply } => {
                 let result = if pvs.remove(&name).is_some() {
                     Ok(())
@@ -753,7 +750,6 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
             }
 
             // ── Fetch ───────────────────────────────────────────────────────
-
             ManagerCommand::FetchDouble { name, reply } => {
                 let result = match pvs.get(&name) {
                     Some(ManagedPvState::Double {
@@ -930,7 +926,6 @@ pub fn run_worker(rx: channel::Receiver<ManagerCommand>) {
             }
 
             // ── Stop ────────────────────────────────────────────────────────
-
             ManagerCommand::Stop { reply } => {
                 pvs.clear();
                 let _ = reply.send(Ok(()));

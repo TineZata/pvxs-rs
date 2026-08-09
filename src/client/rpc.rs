@@ -3,7 +3,6 @@
 
 use crate::{PvxsError, Result, Value};
 
-
 /// RPC (Remote Procedure Call) builder.
 ///
 /// Mirrors `pvxs-sys::Rpc` exactly.
@@ -23,31 +22,43 @@ impl Rpc {
     }
 
     /// Add a string argument.
-    pub fn arg_string(&mut self, field: &str, value: &str) {
+    pub fn arg_string(&mut self, field: &str, value: &str) -> Result<&mut Self> {
         self._args.set_field_string(field, value.to_string());
+        Ok(self)
     }
 
     /// Add a double argument.
-    pub fn arg_double(&mut self, field: &str, value: f64) {
+    pub fn arg_double(&mut self, field: &str, value: f64) -> Result<&mut Self> {
         self._args.set_field_double(field, value);
+        Ok(self)
     }
 
     /// Add an int32 argument.
-    pub fn arg_int32(&mut self, field: &str, value: i32) {
+    pub fn arg_int32(&mut self, field: &str, value: i32) -> Result<&mut Self> {
         self._args.set_field_int32(field, value);
+        Ok(self)
     }
 
     /// Add a boolean argument (stored as int32 0/1).
-    pub fn arg_bool(&mut self, field: &str, value: bool) {
+    pub fn arg_bool(&mut self, field: &str, value: bool) -> Result<&mut Self> {
         self._args.set_field_int32(field, value as i32);
+        Ok(self)
     }
 
     /// Execute the RPC synchronously.
     ///
     /// TODO(network): pvAccess TCP transport not yet implemented.
-    pub fn execute(&mut self, _timeout: f64) -> Result<Value> {
+    pub fn execute(self, _timeout: f64) -> Result<Value> {
         Err(PvxsError::new(
             "pvAccess network transport not yet implemented — see TODO.md",
         ))
+    }
+}
+
+#[cfg(feature = "async")]
+impl Rpc {
+    /// Execute the RPC asynchronously.
+    pub async fn execute_async(self, timeout: f64) -> Result<Value> {
+        self.execute(timeout)
     }
 }

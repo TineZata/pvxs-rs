@@ -1,8 +1,77 @@
 // Copyright 2026 Tine Zata
 // SPDX-License-Identifier: MPL-2.0
-use crate::{PvxsError, Result, Value};
-use crate::client::{Monitor, MonitorBuilder, Rpc};
 use crate::client::config::ClientConfig;
+use crate::client::{Monitor, MonitorBuilder, Rpc};
+use crate::{PvxsError, Result, Value};
+use std::sync::{Arc, Mutex};
+
+pub(crate) struct RuntimeOwner {
+    handle: tokio::runtime::Handle,
+    shutdown_tx: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    worker: Mutex<Option<std::thread::JoinHandle<()>>>,
+}
+
+impl RuntimeOwner {
+    pub(crate) fn start() -> Result<Arc<Self>> {
+        let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        let worker = std::thread::Builder::new()
+            .name("pvxs-client-runtime".to_string())
+            .spawn(move || {
+                let runtime = match tokio::runtime::Runtime::new() {
+                    Ok(runtime) => runtime,
+                    Err(error) => {
+                        let _ = ready_tx.send(Err(error.to_string()));
+                        return;
+                    }
+                };
+
+                if ready_tx.send(Ok(runtime.handle().clone())).is_err() {
+                    return;
+                }
+
+                runtime.block_on(async {
+                    let _ = shutdown_rx.await;
+                });
+            })
+            .map_err(|error| PvxsError::new(format!("runtime thread: {error}")))?;
+
+        let handle = ready_rx
+            .recv()
+            .map_err(|_| PvxsError::new("runtime thread stopped during startup"))?
+            .map_err(|error| PvxsError::new(format!("tokio runtime: {error}")))?;
+
+        Ok(Arc::new(Self {
+            handle,
+            shutdown_tx: Mutex::new(Some(shutdown_tx)),
+            worker: Mutex::new(Some(worker)),
+        }))
+    }
+
+    pub(crate) fn handle(&self) -> tokio::runtime::Handle {
+        self.handle.clone()
+    }
+}
+
+impl Drop for RuntimeOwner {
+    fn drop(&mut self) {
+        if let Some(shutdown_tx) = self.shutdown_tx.get_mut().unwrap().take() {
+            let _ = shutdown_tx.send(());
+        }
+
+        if let Some(worker) = self.worker.get_mut().unwrap().take() {
+            if worker.thread().id() == std::thread::current().id() {
+                let _ = std::thread::Builder::new()
+                    .name("pvxs-runtime-reaper".to_string())
+                    .spawn(move || {
+                        let _ = worker.join();
+                    });
+            } else {
+                let _ = worker.join();
+            }
+        }
+    }
+}
 
 /// A pvAccess client context.
 ///
@@ -11,11 +80,11 @@ use crate::client::config::ClientConfig;
 ///
 /// # Network status
 ///
-/// TODO: pvAccess TCP/UDP transport not yet implemented.
-/// All network operations return an error until the transport layer is added.
+/// UDP discovery and TCP GET, PUT, and Monitor operations are implemented.
+/// RPC transport remains incomplete.
 pub struct Context {
     pub(crate) _config: ClientConfig,
-    _rt: tokio::runtime::Runtime,
+    runtime: Arc<RuntimeOwner>,
 }
 
 impl Context {
@@ -24,21 +93,17 @@ impl Context {
     /// Reads `EPICS_PVA_ADDR_LIST`, `EPICS_PVA_AUTO_ADDR_LIST`, and
     /// `EPICS_PVA_BROADCAST_PORT`.
     pub fn from_env() -> Result<Self> {
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| PvxsError::new(format!("tokio runtime: {e}")))?;
         Ok(Self {
             _config: ClientConfig::from_env(),
-            _rt: rt,
+            runtime: RuntimeOwner::start()?,
         })
     }
 
     // ── GET ─────────────────────────────────────────────────────────────────
 
     /// Perform a synchronous GET operation.
-    ///
-    /// TODO(network): pvAccess TCP transport not yet implemented.
     pub fn get(&mut self, pv_name: &str, timeout: f64) -> Result<Value> {
-        crate::net::blocking_get(&self._config, &self._rt, pv_name, timeout)
+        crate::net::blocking_get(&self._config, &self.runtime.handle(), pv_name, timeout)
     }
 
     /// Get type/field information about a process variable.
@@ -52,45 +117,54 @@ impl Context {
     // ── PUT ─────────────────────────────────────────────────────────────────
 
     /// Perform a synchronous PUT with a double value.
-    ///
-    /// TODO(network): pvAccess TCP transport not yet implemented.
     pub fn put_double(&mut self, pv_name: &str, value: f64, timeout: f64) -> Result<()> {
-        crate::net::blocking_put(&self._config, &self._rt, pv_name, crate::net::PutValue::Double(value), timeout)
+        crate::net::blocking_put(
+            &self._config,
+            &self.runtime.handle(),
+            pv_name,
+            crate::net::PutValue::Double(value),
+            timeout,
+        )
     }
 
     /// Perform a synchronous PUT with an int32 value.
-    ///
-    /// TODO(network): pvAccess TCP transport not yet implemented.
     pub fn put_int32(&mut self, pv_name: &str, value: i32, timeout: f64) -> Result<()> {
-        crate::net::blocking_put(&self._config, &self._rt, pv_name, crate::net::PutValue::Int32(value), timeout)
+        crate::net::blocking_put(
+            &self._config,
+            &self.runtime.handle(),
+            pv_name,
+            crate::net::PutValue::Int32(value),
+            timeout,
+        )
     }
 
     /// Perform a synchronous PUT with a string value.
-    ///
-    /// TODO(network): pvAccess TCP transport not yet implemented.
     pub fn put_string(&mut self, pv_name: &str, value: &str, timeout: f64) -> Result<()> {
-        crate::net::blocking_put(&self._config, &self._rt, pv_name, crate::net::PutValue::String(value), timeout)
+        crate::net::blocking_put(
+            &self._config,
+            &self.runtime.handle(),
+            pv_name,
+            crate::net::PutValue::String(value),
+            timeout,
+        )
     }
 
     /// Perform a synchronous PUT with an enum index (i16).
-    ///
-    /// TODO(network): pvAccess TCP transport not yet implemented.
     pub fn put_enum(&mut self, pv_name: &str, value: i16, timeout: f64) -> Result<()> {
-        crate::net::blocking_put(&self._config, &self._rt, pv_name, crate::net::PutValue::Enum(value), timeout)
+        crate::net::blocking_put(
+            &self._config,
+            &self.runtime.handle(),
+            pv_name,
+            crate::net::PutValue::Enum(value),
+            timeout,
+        )
     }
 
     /// Perform a synchronous PUT with a double array.
-    ///
-    /// TODO(network): pvAccess TCP transport not yet implemented.
-    pub fn put_double_array(
-        &mut self,
-        pv_name: &str,
-        value: Vec<f64>,
-        timeout: f64,
-    ) -> Result<()> {
+    pub fn put_double_array(&mut self, pv_name: &str, value: Vec<f64>, timeout: f64) -> Result<()> {
         crate::net::blocking_put(
             &self._config,
-            &self._rt,
+            &self.runtime.handle(),
             pv_name,
             crate::net::PutValue::DoubleArray(value),
             timeout,
@@ -98,17 +172,10 @@ impl Context {
     }
 
     /// Perform a synchronous PUT with an int32 array.
-    ///
-    /// TODO(network): pvAccess TCP transport not yet implemented.
-    pub fn put_int32_array(
-        &mut self,
-        pv_name: &str,
-        value: Vec<i32>,
-        timeout: f64,
-    ) -> Result<()> {
+    pub fn put_int32_array(&mut self, pv_name: &str, value: Vec<i32>, timeout: f64) -> Result<()> {
         crate::net::blocking_put(
             &self._config,
-            &self._rt,
+            &self.runtime.handle(),
             pv_name,
             crate::net::PutValue::Int32Array(value),
             timeout,
@@ -116,8 +183,6 @@ impl Context {
     }
 
     /// Perform a synchronous PUT with a string array.
-    ///
-    /// TODO(network): pvAccess TCP transport not yet implemented.
     pub fn put_string_array(
         &mut self,
         pv_name: &str,
@@ -126,7 +191,7 @@ impl Context {
     ) -> Result<()> {
         crate::net::blocking_put(
             &self._config,
-            &self._rt,
+            &self.runtime.handle(),
             pv_name,
             crate::net::PutValue::StringArray(value),
             timeout,
@@ -136,23 +201,19 @@ impl Context {
     // ── Monitor ──────────────────────────────────────────────────────────────
 
     /// Create a simple monitor subscription.
-    ///
-    /// TODO(network): pvAccess TCP transport not yet implemented.
     pub fn monitor(&mut self, pv_name: &str) -> Result<Monitor> {
         Ok(Monitor::new(
             pv_name.to_string(),
-            self._rt.handle().clone(),
+            Arc::clone(&self.runtime),
             self._config.clone(),
         ))
     }
 
     /// Create a [`MonitorBuilder`] for advanced monitor configuration.
-    ///
-    /// TODO(network): pvAccess TCP transport not yet implemented.
     pub fn monitor_builder(&mut self, pv_name: &str) -> Result<MonitorBuilder> {
         Ok(MonitorBuilder::new(
             pv_name.to_string(),
-            self._rt.handle().clone(),
+            Arc::clone(&self.runtime),
             self._config.clone(),
         ))
     }
@@ -164,6 +225,26 @@ impl Context {
     /// TODO(network): pvAccess TCP transport not yet implemented.
     pub fn rpc(&mut self, pv_name: &str) -> Result<Rpc> {
         Ok(Rpc::new(pv_name.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn context_can_drop_inside_async_runtime() {
+        let context = Context::from_env().expect("context");
+        drop(context);
+    }
+
+    #[tokio::test]
+    async fn monitor_keeps_runtime_alive_after_context_drop() {
+        let mut context = Context::from_env().expect("context");
+        let monitor = context.monitor("test:runtime:lifetime").expect("monitor");
+
+        drop(context);
+        drop(monitor);
     }
 }
 

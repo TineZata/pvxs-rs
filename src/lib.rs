@@ -31,8 +31,8 @@
 //! - [`AlarmSeverity`], [`AlarmStatus`]
 //!
 //! ## Network status
-//! The in-memory server/client state machine is fully implemented.
-//! The pvAccess TCP/UDP transport layer is a work in progress — see `TODO.md`.
+//! UDP discovery and TCP GET, PUT, Monitor, and server transport are implemented.
+//! RPC and optional advanced transport features remain incomplete; see `TODO.md`.
 
 /// Alarm computation and metadata types.
 pub mod alarms;

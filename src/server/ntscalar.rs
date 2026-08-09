@@ -1,7 +1,7 @@
 // Copyright 2026 Tine Zata
 // SPDX-License-Identifier: MPL-2.0
 use crate::alarms::{AlarmSeverity, AlarmStatus};
-use crate::metadata::{DisplayMetadata, ControlMetadata, AlarmMetadata};
+use crate::metadata::{AlarmMetadata, ControlMetadata, DisplayMetadata};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Builder for NTScalar / NTScalarArray PV metadata.

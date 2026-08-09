@@ -1,12 +1,13 @@
 // Copyright 2026 Tine Zata
 // SPDX-License-Identifier: MPL-2.0
-use std::collections::{HashMap, VecDeque};
+use crate::client::context::RuntimeOwner;
 use crate::client::ClientConfig;
 use crate::{PvxsError, Result, Value};
+use epics_libcom_rs::runtime::task;
+use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::Duration;
-use epics_libcom_rs::runtime::task;
 
 /// Internal shared queue between the network driver and the consumer.
 struct MonitorInner {
@@ -35,6 +36,24 @@ fn register_monitor(name: &str, inner: &Arc<Mutex<MonitorInner>>) {
     let subscribers = guard.entry(name.to_string()).or_default();
     subscribers.retain(|entry| entry.upgrade().is_some());
     subscribers.push(Arc::downgrade(inner));
+}
+
+fn unregister_monitor(name: &str, inner: &Arc<Mutex<MonitorInner>>) {
+    let mut guard = monitor_registry().lock().unwrap();
+    let remove_entry = if let Some(subscribers) = guard.get_mut(name) {
+        subscribers.retain(|entry| {
+            entry
+                .upgrade()
+                .map(|subscriber| !Arc::ptr_eq(&subscriber, inner))
+                .unwrap_or(false)
+        });
+        subscribers.is_empty()
+    } else {
+        false
+    };
+    if remove_entry {
+        guard.remove(name);
+    }
 }
 
 #[allow(dead_code)]
@@ -74,20 +93,16 @@ pub(crate) fn publish_value(name: &str, value: Value) -> usize {
 /// A subscription to value changes for a process variable.
 ///
 /// Mirrors the `pvxs-sys::Monitor` API exactly.
-///
-/// TODO(network): pop() / try_get_update() will block/return None until the
-/// pvAccess transport layer delivers real data.
 pub struct Monitor {
     inner: Arc<Mutex<MonitorInner>>,
-    /// Handle to the tokio runtime used to drive `get_update`'s async wait.
-    rt: tokio::runtime::Handle,
+    runtime: Arc<RuntimeOwner>,
     config: ClientConfig,
     session: Option<crate::net::MonitorSession>,
     event_task: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Monitor {
-    pub(crate) fn new(name: String, rt: tokio::runtime::Handle, config: ClientConfig) -> Self {
+    pub(crate) fn new(name: String, runtime: Arc<RuntimeOwner>, config: ClientConfig) -> Self {
         let notify = Arc::new(tokio::sync::Notify::new());
         let inner = Arc::new(Mutex::new(MonitorInner {
             name: name.clone(),
@@ -103,7 +118,7 @@ impl Monitor {
         register_monitor(&name, &inner);
         Self {
             inner,
-            rt,
+            runtime,
             config,
             session: None,
             event_task: None,
@@ -116,7 +131,11 @@ impl Monitor {
             let mut guard = self.inner.lock().unwrap();
             let was_empty = guard.queue.is_empty() && guard.events.is_empty();
             guard.queue.push_back(value);
-            let callback = if was_empty { guard.event_callback } else { None };
+            let callback = if was_empty {
+                guard.event_callback
+            } else {
+                None
+            };
             (guard.notify.clone(), callback)
         };
         if let Some(cb) = callback {
@@ -137,15 +156,11 @@ impl Monitor {
         }
 
         let name = self.name();
-        let (session, mut rx) = crate::net::start_monitor(
-            self.config.clone(),
-            self.rt.clone(),
-            name,
-            5.0,
-        )?;
+        let (session, mut rx) =
+            crate::net::start_monitor(self.config.clone(), self.runtime.handle(), name, 5.0)?;
 
         let inner = Arc::clone(&self.inner);
-        let task = self.rt.spawn(async move {
+        let task = self.runtime.handle().spawn(async move {
             while let Some(event) = rx.recv().await {
                 match event {
                     crate::net::MonitorNetEvent::Connected => {
@@ -196,7 +211,11 @@ impl Monitor {
                             let was_empty = guard.queue.is_empty() && guard.events.is_empty();
                             guard.queue.push_back(value);
                             guard.connected = true;
-                            let callback = if was_empty { guard.event_callback } else { None };
+                            let callback = if was_empty {
+                                guard.event_callback
+                            } else {
+                                None
+                            };
                             (guard.notify.clone(), callback)
                         };
                         if let Some(cb) = callback {
@@ -209,7 +228,11 @@ impl Monitor {
                             let mut guard = inner.lock().unwrap();
                             let was_empty = guard.queue.is_empty() && guard.events.is_empty();
                             guard.events.push_back(MonitorEvent::RemoteError(msg));
-                            let callback = if was_empty { guard.event_callback } else { None };
+                            let callback = if was_empty {
+                                guard.event_callback
+                            } else {
+                                None
+                            };
                             (guard.notify.clone(), callback)
                         };
                         if let Some(cb) = callback {
@@ -222,7 +245,11 @@ impl Monitor {
                             let mut guard = inner.lock().unwrap();
                             let was_empty = guard.queue.is_empty() && guard.events.is_empty();
                             guard.events.push_back(MonitorEvent::ClientError(msg));
-                            let callback = if was_empty { guard.event_callback } else { None };
+                            let callback = if was_empty {
+                                guard.event_callback
+                            } else {
+                                None
+                            };
                             (guard.notify.clone(), callback)
                         };
                         if let Some(cb) = callback {
@@ -236,8 +263,14 @@ impl Monitor {
                             let was_empty = guard.queue.is_empty() && guard.events.is_empty();
                             guard.connected = false;
                             guard.running = false;
-                            guard.events.push_back(MonitorEvent::Finished("finished".to_string()));
-                            let callback = if was_empty { guard.event_callback } else { None };
+                            guard
+                                .events
+                                .push_back(MonitorEvent::Finished("finished".to_string()));
+                            let callback = if was_empty {
+                                guard.event_callback
+                            } else {
+                                None
+                            };
                             (guard.notify.clone(), callback)
                         };
                         if let Some(cb) = callback {
@@ -328,7 +361,7 @@ impl Monitor {
         // thread's tasks before parking so the scheduler does not deadlock.
         match tokio::runtime::Handle::try_current() {
             Ok(handle) => tokio::task::block_in_place(|| handle.block_on(fut)),
-            Err(_) => self.rt.block_on(fut),
+            Err(_) => self.runtime.handle().block_on(fut),
         }
     }
 
@@ -357,9 +390,10 @@ impl Monitor {
 impl Drop for Monitor {
     fn drop(&mut self) {
         let _ = self.stop();
+        let name = self.inner.lock().unwrap().name.clone();
+        unregister_monitor(&name, &self.inner);
     }
 }
-
 
 /// Builder for creating monitors with advanced configuration.
 ///
@@ -369,18 +403,18 @@ pub struct MonitorBuilder {
     connect_exception: bool,
     disconnect_exception: bool,
     event_callback: Option<extern "C" fn()>,
-    rt: tokio::runtime::Handle,
+    runtime: Arc<RuntimeOwner>,
     config: ClientConfig,
 }
 
 impl MonitorBuilder {
-    pub(crate) fn new(name: String, rt: tokio::runtime::Handle, config: ClientConfig) -> Self {
+    pub(crate) fn new(name: String, runtime: Arc<RuntimeOwner>, config: ClientConfig) -> Self {
         Self {
             name,
             connect_exception: false,
             disconnect_exception: true,
             event_callback: None,
-            rt,
+            runtime,
             config,
         }
     }
@@ -411,10 +445,8 @@ impl MonitorBuilder {
     }
 
     /// Finalise the builder and start the subscription.
-    ///
-    /// TODO(network): pvAccess TCP transport not yet implemented.
     pub fn exec(self) -> Result<Monitor> {
-        let m = Monitor::new(self.name, self.rt, self.config);
+        let m = Monitor::new(self.name, self.runtime, self.config);
         {
             let mut guard = m.inner.lock().unwrap();
             guard.connect_exception = self.connect_exception;
@@ -422,6 +454,13 @@ impl MonitorBuilder {
             guard.event_callback = self.event_callback;
         }
         Ok(m)
+    }
+
+    /// Execute the builder with a callback identifier.
+    ///
+    /// This compatibility entry point currently behaves the same as [`Self::exec`].
+    pub fn exec_with_callback(self, _callback_id: u64) -> Result<Monitor> {
+        self.exec()
     }
 }
 
@@ -452,16 +491,17 @@ impl fmt::Display for MonitorEvent {
     }
 }
 
+impl std::error::Error for MonitorEvent {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn monitor_queue_preserves_fifo_order() {
-        let rt = tokio::runtime::Runtime::new().expect("test runtime");
         let mut monitor = Monitor::new(
             "fifo_test".to_string(),
-            rt.handle().clone(),
+            RuntimeOwner::start().expect("test runtime"),
             ClientConfig::default(),
         );
 
@@ -482,10 +522,9 @@ mod tests {
 
     #[test]
     fn monitor_receives_published_updates() {
-        let rt = tokio::runtime::Runtime::new().expect("test runtime");
         let mut monitor = Monitor::new(
             "pub_test".to_string(),
-            rt.handle().clone(),
+            RuntimeOwner::start().expect("test runtime"),
             ClientConfig::default(),
         );
 
@@ -500,10 +539,9 @@ mod tests {
 
     #[test]
     fn get_update_wakes_on_publish() {
-        let rt = tokio::runtime::Runtime::new().expect("test runtime");
         let mut monitor = Monitor::new(
             "wake_test".to_string(),
-            rt.handle().clone(),
+            RuntimeOwner::start().expect("test runtime"),
             ClientConfig::default(),
         );
 

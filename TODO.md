@@ -82,9 +82,11 @@ interchangeable and share no on-wire encoding.
 
 ---
 
-## pvAccess network transport (largest missing piece)
+## pvAccess network transport
 
-The client now has a working phase-1 pvAccess GET/PUT transport stack implemented in `src/net.rs` and wired through the client context; monitor and server-network work remain outstanding.
+The core pvAccess transport is implemented in `src/net.rs` and the server module:
+UDP discovery/beacons, TCP GET/PUT/Monitor, and server networking are functional.
+RPC, TLS, and advanced interoperability features remain outstanding.
 
 ### Dependency decision (researched and revised 2026-07-25)
 
