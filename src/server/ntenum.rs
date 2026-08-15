@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: MPL-2.0
 use std::time::{SystemTime, UNIX_EPOCH};
 /// Builder for NTEnum PV metadata.
-///
-/// Mirrors `pvxs-sys::NTEnumMetadataBuilder` exactly.
 pub struct NTEnumMetadataBuilder {
     pub(crate) alarm_severity: i32,
     pub(crate) alarm_status: i32,

@@ -5,9 +5,6 @@ use crate::metadata::{AlarmMetadata, ControlMetadata, DisplayMetadata};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Builder for NTScalar / NTScalarArray PV metadata.
-///
-/// Mirrors `pvxs-sys::NTScalarMetadataBuilder` exactly so call sites are
-/// source-compatible when swapping crates.
 pub struct NTScalarMetadataBuilder {
     pub(crate) alarm_severity: AlarmSeverity,
     pub(crate) alarm_status: AlarmStatus,

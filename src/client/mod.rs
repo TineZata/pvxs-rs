@@ -1,10 +1,7 @@
 // Copyright 2026 Tine Zata
 // SPDX-License-Identifier: MPL-2.0
 //! Pure-Rust client for pvAccess.
-//!
-//! The public API mirrors `pvxs-sys::Context`, `Monitor`, `MonitorBuilder`
-//! and `Rpc` exactly so callers can swap the crate without source changes.
-//!
+//! 
 //! # Network status
 //!
 //! UDP discovery and TCP GET, PUT, and Monitor operations are implemented.

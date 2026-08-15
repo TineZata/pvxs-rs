@@ -88,10 +88,27 @@ pub struct Context {
 }
 
 impl Context {
-    /// Create a new Context configured from environment variables.
+    /// Create a client context from the process environment.
     ///
-    /// Reads `EPICS_PVA_ADDR_LIST`, `EPICS_PVA_AUTO_ADDR_LIST`, and
-    /// `EPICS_PVA_BROADCAST_PORT`.
+    /// The context reads `EPICS_PVA_ADDR_LIST`, `EPICS_PVA_AUTO_ADDR_LIST`,
+    /// and `EPICS_PVA_BROADCAST_PORT` itself. Applications should configure
+    /// those variables before startup; they do not need to read or forward
+    /// them in Rust code.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use pvxs::Context;
+    /// 
+    /// std::env::set_var("EPICS_PVA_ADDR_LIST", format!("127.0.0.1:{}", server.udp_port()));
+    /// std::env::set_var("EPICS_PVA_AUTO_ADDR_LIST", "NO");
+    /// std::env::set_var("EPICS_PVA_BROADCAST_PORT", "5076");
+    ///
+    /// let mut context = Context::from_env()?;
+    /// let value = context.get("example:temperature", 2.0)?;
+    /// println!("{}", value.get_field_double("value")?);
+    /// # Ok::<(), pvxs::PvxsError>(())
+    /// ```
     pub fn from_env() -> Result<Self> {
         Ok(Self {
             _config: ClientConfig::from_env(),

@@ -5,8 +5,6 @@ use crate::{PvxsError, Result, Value};
 
 /// RPC (Remote Procedure Call) builder.
 ///
-/// Mirrors `pvxs-sys::Rpc` exactly.
-///
 /// RPC execution transport is not yet implemented.
 pub struct Rpc {
     _name: String,

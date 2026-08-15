@@ -1,38 +1,25 @@
+// Copyright 2026 Tine Zata
+// SPDX-License-Identifier: MPL-2.0
+use pvxs::{Context, NTScalarMetadataBuilder, Server};
 
-mod test_client_put_remote_server {
-    use std::thread;
-    use pvxs::{Server, Client};
+fn context_for(server: &Server) -> Context {
+    std::env::set_var("EPICS_PVA_ADDR_LIST", format!("127.0.0.1:{}", server.udp_port()));
+    std::env::set_var("EPICS_PVA_AUTO_ADDR_LIST", "NO");
+    std::env::set_var("EPICS_PVA_BROADCAST_PORT", server.udp_port().to_string());
+    Context::from_env().expect("context from env")
+}
 
-    #[cfg(feature = "client")]
-    #[cfg(feature = "server")]
-    #[test]
-    fn test_client_put_int32_on_server_remote() -> Result<(), Box<dyn std::error::Error>> {
-        let name = "TEST:PV:REMOTE";
-        let start_value = 100;
-        let put_value = 200;
-        // Create isolated server with a single PV
-        let mut server = Server::new_isolated()?;
+#[test]
+fn client_put_updates_server_value() {
+    let server = Server::start_isolated().expect("start server");
+    let name = "test:remote:put:int32";
+    server
+        .create_pv_int32(name, 100, NTScalarMetadataBuilder::new())
+        .expect("create int32 pv");
 
-        let mut pv = server.add_int32_pv(name, start_value)?;
-        // Start the server
-        server.start()?;
-        // Give server time to start
-        thread::sleep(std::time::Duration::from_millis(100));
+    let mut context = context_for(&server);
+    context.put_int32(name, 200, 2.0).expect("put int32");
+    assert_eq!(server.fetch_int32(name).expect("fetch int32").value, 200);
 
-        // Server should be listening on a port
-        assert!(server.tcp_port() > 0 || server.udp_port() > 0);
-
-        // Instantiate a client
-        let mut client = Client::new()?;
-
-        // Client puts a new value
-        client.put(name, put_value, 3.0)?;
-
-        // Fetch the value from the PV to verify the put worked
-        let fetched_value = pv.fetch()?;
-        let fetched_int = fetched_value.as_int()?;
-        assert_eq!(fetched_int, put_value);
-
-        Ok(())
-    }
+    server.stop_drop().expect("stop server");
 }

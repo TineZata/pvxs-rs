@@ -1,111 +1,101 @@
-#[cfg(feature = "client")]
-#[cfg(feature = "server")]
-#[cfg(test)]
+// Copyright 2026 Tine Zata
+// SPDX-License-Identifier: MPL-2.0
+use pvxs::{
+    AlarmMetadata, AlarmSeverity, AlarmStatus, Context, ControlMetadata, NTEnumMetadataBuilder,
+    NTScalarMetadataBuilder, Server,
+};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
-mod test_client_get_on_server_local {
-    use std::thread;
-    use pvxs::{Server, Client};
-
-    #[test]
-    fn test_client_get_int32_on_server_local() -> Result<(), Box<dyn std::error::Error>> {
-    
-        let name = "TEST:PV:LOCAL";
-        let start_value = 42;
-        // Create isolated server with a single PV
-        let mut server = Server::new_isolated()?;
-
-        let mut pv = server.add_int32_pv(name, start_value)?;
-        // Start the server
-        server.start()?;
-        // Give server time to start
-        thread::sleep(std::time::Duration::from_millis(100));
-
-        // Server should be listening on a port
-        assert!(server.tcp_port() > 0 || server.udp_port() > 0);
-
-        // Check the data is the expected start value, doing a fetch
-        let fetched_value = pv.fetch()?;
-        let fetched_int = fetched_value.as_int()?;
-        assert_eq!(fetched_int, start_value);
-
-        // Instantiate a client
-        let mut client = Client::new()?;
-        // Client should timeout and not get a value
-        match client.get(name, 3.0) {
-            Ok(_) => assert!(false,"Client should not be able to get value from isolated server"),
-            Err(_) => (), // Expected error
-        }
-        Ok(())
-    }
-
-    #[cfg(feature = "client")]
-    #[cfg(feature = "server")]
-    #[test]
-    fn test_client_get_double_on_server_local() -> Result<(), Box<dyn std::error::Error>> {
-        let name = "TEST:PV:LOCAL:DOUBLE";
-        let start_value = 3.14;
-        // Create isolated server with a single PV
-        let mut server = Server::new_isolated()?;
-
-        let mut pv = server.add_double_pv(name, start_value)?;
-        // Start the server
-        server.start()?;
-        // Give server time to start
-        thread::sleep(std::time::Duration::from_millis(100));
-
-        // Server should be listening on a port
-        assert!(server.tcp_port() > 0 || server.udp_port() > 0);
-
-        // Check the data is the expected start value, doing a fetch
-        let fetched_value = pv.fetch()?;
-        let fetched_double = fetched_value.as_double()?;
-        assert_eq!(fetched_double, start_value);
-
-        // Instantiate a client
-        let mut client = Client::new()?;
-        // Client should timeout and not get a value
-        match client.get(name, 3.0) {
-            Ok(_) => assert!(false,"Client should not be able to get value from isolated server"),
-            Err(_) => (), // Expected error
-        }
-        Ok(())
-    }
-
-    #[cfg(feature = "client")]
-    #[cfg(feature = "server")]
-    #[test]
-    fn test_client_get_enum_on_server_local() -> Result<(), Box<dyn std::error::Error>> {
-
-        let name = "TEST:PV:LOCAL:ENUM";
-        let enum_choices = vec!["RED", "GREEN", "BLUE"];
-        let start_value = 1; // GREEN
-        // Create isolated server with a single PV
-        let mut server = Server::new_isolated()?;
-
-        let mut pv = server.add_enum_pv(name, enum_choices.clone(), start_value)?;
-        // Start the server
-        server.start()?;
-        // Give server time to start
-        thread::sleep(std::time::Duration::from_millis(100));
-
-        // Server should be listening on a port
-        assert!(server.tcp_port() > 0 || server.udp_port() > 0);
-
-        // Check the data is the expected start value, doing a fetch
-        let fetched_value = pv.fetch()?;
-        let fetched_enum = fetched_value.as_enum_index()?;
-        let fetched_choices = fetched_value.as_enum_choices()?;
-        assert_eq!(fetched_enum, start_value);
-        assert_eq!(fetched_choices, enum_choices);
-
-        // Instantiate a client
-        let mut client = Client::new()?;
-        // Client should timeout and not get a value
-        match client.get(name, 3.0) {
-            Ok(_) => assert!(false,"Client should not be able to get value from isolated server"),
-            Err(_) => (), // Expected error
-        }
-        Ok(())
+fn env_lock() -> MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    match LOCK.get_or_init(|| Mutex::new(())).lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
     }
 }
 
+fn context_for(server: &Server) -> Context {
+    std::env::set_var("EPICS_PVA_ADDR_LIST", format!("127.0.0.1:{}", server.udp_port()));
+    std::env::set_var("EPICS_PVA_AUTO_ADDR_LIST", "NO");
+    std::env::set_var("EPICS_PVA_BROADCAST_PORT", server.udp_port().to_string());
+    Context::from_env().expect("context from env")
+}
+
+#[test]
+fn client_get_int32_from_isolated_server() {
+    let _guard = env_lock();
+    let server = Server::start_isolated().expect("start server");
+    let name = "test:local:int32";
+    let metadata = NTScalarMetadataBuilder::new()
+        .control(ControlMetadata {
+            limit_low: 0.0,
+            limit_high: 100.0,
+            min_step: 1.0,
+        })
+        .alarm(AlarmSeverity::NoAlarm, AlarmStatus::NoAlarm, "OK")
+        .alarm_metadata(
+            AlarmMetadata::new()
+                .active(true)
+                .low_alarm_limit(10.0)
+                .low_warning_limit(20.0)
+                .high_warning_limit(80.0)
+                .high_alarm_limit(90.0)
+                .low_alarm_severity(AlarmSeverity::Major)
+                .low_warning_severity(AlarmSeverity::Minor)
+                .high_warning_severity(AlarmSeverity::Minor)
+                .high_alarm_severity(AlarmSeverity::Major),
+        );
+    server
+        .create_pv_int32(name, 42, metadata)
+        .expect("create int32 pv");
+
+    let fetched = server.fetch_int32(name).expect("fetch int32");
+    assert_eq!(fetched.value, 42);
+    assert_eq!(fetched.alarm_severity, AlarmSeverity::NoAlarm);
+
+    let mut context = context_for(&server);
+    let value = context.get(name, 2.0).expect("get int32");
+    assert_eq!(value.get_field_int32("value").expect("value"), 42);
+    server.stop_drop().expect("stop server");
+}
+
+#[test]
+fn client_get_double_from_isolated_server() {
+    let _guard = env_lock();
+    let server = Server::start_isolated().expect("start server");
+    let name = "test:local:double";
+    server
+        .create_pv_double(name, 3.25, NTScalarMetadataBuilder::new())
+        .expect("create double pv");
+
+    let mut context = context_for(&server);
+    let value = context.get(name, 2.0).expect("get double");
+    assert_eq!(value.get_field_double("value").expect("value"), 3.25);
+    server.stop_drop().expect("stop server");
+}
+
+#[test]
+fn client_get_enum_from_isolated_server() {
+    let _guard = env_lock();
+    let server = Server::start_isolated().expect("start server");
+    let name = "test:local:enum";
+    server
+        .create_pv_enum(
+            name,
+            vec!["RED", "GREEN", "BLUE"],
+            1,
+            NTEnumMetadataBuilder::new(),
+        )
+        .expect("create enum pv");
+
+    let mut context = context_for(&server);
+    let value = context.get(name, 2.0).expect("get enum");
+    assert_eq!(value.get_field_enum("value").expect("value"), 1);
+    assert_eq!(
+        value
+            .get_field_string_array("value.choices")
+            .expect("choices"),
+        vec!["RED".to_string(), "GREEN".to_string(), "BLUE".to_string()]
+    );
+    server.stop_drop().expect("stop server");
+}

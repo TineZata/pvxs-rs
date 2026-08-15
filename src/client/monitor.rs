@@ -91,8 +91,6 @@ pub(crate) fn publish_value(name: &str, value: Value) -> usize {
 }
 
 /// A subscription to value changes for a process variable.
-///
-/// Mirrors the `pvxs-sys::Monitor` API exactly.
 pub struct Monitor {
     inner: Arc<Mutex<MonitorInner>>,
     runtime: Arc<RuntimeOwner>,
@@ -396,8 +394,6 @@ impl Drop for Monitor {
 }
 
 /// Builder for creating monitors with advanced configuration.
-///
-/// Mirrors `pvxs-sys::MonitorBuilder` exactly.
 pub struct MonitorBuilder {
     name: String,
     connect_exception: bool,

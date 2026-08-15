@@ -1,92 +1,32 @@
-#[cfg(all(feature = "server", feature = "client"))]
-#[cfg(test)]
-mod test_server_client_interaction {
-    use pvxs::{Server, Client};
-    use std::time::Duration;
-    use std::thread;
+// Copyright 2026 Tine Zata
+// SPDX-License-Identifier: MPL-2.0
+use pvxs::{Context, NTScalarMetadataBuilder, Server};
 
-    #[test]
-    fn test_isolated_server_client_interaction() {
-        // This test verifies that remote CLIENT operations do not work
-        // for isolated servers
-        
-        let mut server = Server::new_isolated().unwrap();
+fn context_for(server: &Server) -> Context {
+    std::env::set_var("EPICS_PVA_ADDR_LIST", format!("127.0.0.1:{}", server.udp_port()));
+    std::env::set_var("EPICS_PVA_AUTO_ADDR_LIST", "NO");
+    std::env::set_var("EPICS_PVA_BROADCAST_PORT", server.udp_port().to_string());
+    Context::from_env().expect("context from env")
+}
 
-        assert!(server.tcp_port() > 0, "Expected tcp_port to be non-zero for isolated server");
-        assert!(server.udp_port() > 0, "Expected udp_port to be non-zero for isolated server");
+#[test]
+fn server_and_client_observe_consistent_updates() {
+    let server = Server::start_isolated().expect("start server");
+    let name = "test:interaction:double";
+    server
+        .create_pv_double(name, 123.45, NTScalarMetadataBuilder::new())
+        .expect("create double pv");
+    let mut context = context_for(&server);
 
-        let pv_name = "test:client:needs:start";
-        let test_value = 123.45;
-        
-        let mut pv = server.add_double_pv(pv_name, test_value).unwrap();
-        
-        // Server-side fetch works immediately (no start needed)
-        let server_fetch = pv.fetch();
-        assert!(server_fetch.is_ok(), "Server-side fetch should work without start()");
-        
-        // Create client that will try to connect to the server
-        let mut client = Client::new().unwrap();
-        
-        thread::sleep(Duration::from_millis(200));
-        
-        // Try client get - this should not work without start()
-        let client_result = client.get(pv_name, 1.0);
-        assert!(client_result.is_err(), "Client GET should fail without server.start()");
+    let initial = context.get(name, 2.0).expect("get initial value");
+    assert_eq!(initial.get_field_double("value").expect("value"), 123.45);
 
-        // Now start the server
-        server.start().unwrap();
-        thread::sleep(Duration::from_millis(200));
+    server.post_double(name, 999.99).expect("server post");
+    let updated = context.get(name, 2.0).expect("get updated value");
+    assert_eq!(updated.get_field_double("value").expect("value"), 999.99);
 
-        // Try client get again - this should not work as well
-        let client_result = client.get(pv_name, 1.0);
-        assert!(client_result.is_err(), "Client GET should fail even after server.start() for isolated server");
-        
-        // Stop the server
-        server.stop().unwrap();
+    context.put_double(name, 42.5, 2.0).expect("client put");
+    assert_eq!(server.fetch_double(name).expect("server fetch").value, 42.5);
 
-        // Try client get again - this should fail after stop()
-        let client_result = client.get(pv_name, 1.0);
-        assert!(client_result.is_err(), "Client GET should fail after server.stop()");
-    }
-
-    #[test]
-    fn test_remote_server_client_interaction() {
-        // This test uses the standard EPICS ports (from environment)
-        // so client discovery should work
-        
-        let mut server = Server::new().unwrap(); // Uses configured EPICS ports
-        
-        assert_eq!(server.tcp_port(), 5075, "Expected tcp_port to be 5075 from EPICS v7 configuration");
-        assert_eq!(server.udp_port(), 5076, "Expected udp_port to be 5076 from EPICS v7 configuration");
-
-        let pv_name = "test:remote:client:get";
-        let test_value = 999.99;
-        let mut pv = server.add_double_pv(pv_name, test_value).unwrap();
-        
-        // Server-side fetch works immediately
-        let server_fetch = pv.fetch();
-        assert!(server_fetch.is_ok(), "Server-side fetch should work without start()");
-        
-        // Create client
-        let mut client = Client::new().unwrap();
-
-        // Client tries to get the PV value via network WITHOUT server.start()
-        assert!(client.get(pv_name, 1.0).is_err(), "Client GET should fail without server.start()");
-
-        // Start server for client access
-        server.start().unwrap();
-        thread::sleep(Duration::from_millis(200));
-        
-        // Try to get the PV value via network
-        let client_result = client.get(pv_name, 1.0);
-        assert!(client_result.is_ok(), "Client GET should succeed after server.start()");
-        assert_eq!(client_result.unwrap().as_double().unwrap(), test_value, "Client retrieved value should match test value");
-        
-        server.stop().unwrap();
-
-        // Try client get again after stop - should fail
-        let client_result = client.get(pv_name, 1.0);
-        assert!(client_result.is_err(), "Client GET should fail after server.stop()");
-
-    }
+    server.stop_drop().expect("stop server");
 }

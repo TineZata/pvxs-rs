@@ -1,6 +1,6 @@
 // Copyright 2026 Tine Zata
 // SPDX-License-Identifier: MPL-2.0
-//! Pure-Rust pvAccess server — same public API as `pvxs-sys::Server`.
+//! Pure-Rust pvAccess server.
 //!
 //! All state is held in a worker thread via crossbeam channels.
 //! The pvAccess TCP/UDP transport is a TODO — see TODO.md.
@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -553,8 +553,7 @@ async fn handle_client(
     use std::collections::HashMap;
     let mut channels: HashMap<u32, ChannelInfo> = HashMap::new();
     let mut sid_next: u32 = 1;
-    let (push_tx, mut push_rx) =
-        tokio::sync::mpsc::unbounded_channel::<manager::MonitorPush>();
+    let (push_tx, mut push_rx) = tokio::sync::mpsc::unbounded_channel::<manager::MonitorPush>();
     // active_monitors: ioid → (sid, pv_name, sub_id)
     let mut active_monitors: HashMap<u32, (u32, String, u64)> = HashMap::new();
 
@@ -921,123 +920,309 @@ pub struct FetchedEnum {
 // SharedPV / StaticSource compatibility types
 // ============================================================================
 
-/// Compatibility wrapper mirroring `pvxs-sys::SharedPV`.
+/// A shared process variable that can be hosted by a server.
 ///
-/// In `pvxs-rs`, high-level workflows should continue to use `Server::create_pv_*`.
-/// This type exists to close API-surface parity for lower-level callers.
+/// A mailbox PV accepts client reads and writes, while a readonly PV accepts
+/// client reads but can still be updated by its server through the `post_*`
+/// methods.
+///
+/// # Example
+///
+/// ```rust
+/// use pvxs::server::{SharedPV, NTScalarMetadataBuilder};
+///
+/// let mut pv = SharedPV::create_mailbox()?;
+/// assert!(!pv.is_open());
+/// pv.close()?;
+/// # Ok::<(), pvxs::PvxsError>(())
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct SharedPV {
+    state: Arc<Mutex<SharedPVState>>,
+}
+
+#[derive(Debug, Default)]
+struct SharedPVState {
     readonly: bool,
     value: Option<crate::Value>,
 }
 
+#[allow(dead_code)]
 impl SharedPV {
-    /// Create a new mailbox-backed shared PV.
+    /// Create a mailbox PV that accepts client reads and writes.
     pub fn create_mailbox() -> Result<Self> {
         Ok(Self {
-            readonly: false,
-            value: None,
+            state: Arc::new(Mutex::new(SharedPVState::default())),
         })
     }
 
-    /// Create a new readonly shared PV.
+    /// Create a PV that accepts client reads but rejects client writes.
+    ///
+    /// The server may still update the PV through the `post_*` methods.
     pub fn create_readonly() -> Result<Self> {
         Ok(Self {
-            readonly: true,
-            value: None,
+            state: Arc::new(Mutex::new(SharedPVState {
+                readonly: true,
+                value: None,
+            })),
         })
     }
 
-    /// Open a double value for this shared PV.
-    pub fn open_double(&mut self, value: f64, _metadata: NTScalarMetadataBuilder) -> Result<()> {
-        self.value = Some(crate::Value::nt_scalar_double(value));
-        Ok(())
-    }
-
-    /// Open a double-array value for this shared PV.
-    pub fn open_double_array(
+    /// Open the PV with a double value and scalar metadata.
+    pub(crate) fn open_double(
         &mut self,
-        value: Vec<f64>,
+        initial_value: f64,
         _metadata: NTScalarMetadataBuilder,
     ) -> Result<()> {
-        self.value = Some(crate::Value::nt_scalar_array_double(value));
+        self.set_value(crate::Value::nt_scalar_double(initial_value))?;
         Ok(())
     }
 
-    /// Open an int32 value for this shared PV.
-    pub fn open_int32(&mut self, value: i32, _metadata: NTScalarMetadataBuilder) -> Result<()> {
-        self.value = Some(crate::Value::nt_scalar_int32(value));
-        Ok(())
-    }
-
-    /// Open an int32-array value for this shared PV.
-    pub fn open_int32_array(
+    /// Open the PV with a double-array value and scalar-array metadata.
+    pub(crate) fn open_double_array(
         &mut self,
-        value: Vec<i32>,
+        initial_value: Vec<f64>,
         _metadata: NTScalarMetadataBuilder,
     ) -> Result<()> {
-        self.value = Some(crate::Value::nt_scalar_array_int32(value));
+        self.set_value(crate::Value::nt_scalar_array_double(initial_value))?;
         Ok(())
     }
 
-    /// Open a string value for this shared PV.
-    pub fn open_string(&mut self, value: &str, _metadata: NTScalarMetadataBuilder) -> Result<()> {
-        self.value = Some(crate::Value::nt_scalar_string(value));
-        Ok(())
-    }
-
-    /// Open a string-array value for this shared PV.
-    pub fn open_string_array(
+    /// Open the PV with an int32 value and scalar metadata.
+    pub(crate) fn open_int32(
         &mut self,
-        value: Vec<String>,
+        initial_value: i32,
         _metadata: NTScalarMetadataBuilder,
     ) -> Result<()> {
-        self.value = Some(crate::Value::nt_scalar_array_string(value));
+        self.set_value(crate::Value::nt_scalar_int32(initial_value))?;
         Ok(())
     }
 
-    /// Open an enum value for this shared PV.
-    pub fn open_enum(
+    /// Open the PV with an int32-array value and scalar-array metadata.
+    pub(crate) fn open_int32_array(
+        &mut self,
+        initial_value: Vec<i32>,
+        _metadata: NTScalarMetadataBuilder,
+    ) -> Result<()> {
+        self.set_value(crate::Value::nt_scalar_array_int32(initial_value))?;
+        Ok(())
+    }
+
+    /// Open the PV with a string value and scalar metadata.
+    pub(crate) fn open_string(
+        &mut self,
+        initial_value: &str,
+        _metadata: NTScalarMetadataBuilder,
+    ) -> Result<()> {
+        self.set_value(crate::Value::nt_scalar_string(initial_value))?;
+        Ok(())
+    }
+
+    /// Open the PV with a string-array value and scalar-array metadata.
+    pub(crate) fn open_string_array(
+        &mut self,
+        initial_value: Vec<String>,
+        _metadata: NTScalarMetadataBuilder,
+    ) -> Result<()> {
+        self.set_value(crate::Value::nt_scalar_array_string(initial_value))?;
+        Ok(())
+    }
+
+    /// Open the PV with enum choices, a selected index, and enum metadata.
+    pub(crate) fn open_enum(
         &mut self,
         choices: Vec<&str>,
         selected_index: i16,
         _metadata: NTEnumMetadataBuilder,
     ) -> Result<()> {
         let choices: Vec<String> = choices.into_iter().map(|s| s.to_string()).collect();
-        self.value = Some(crate::Value::nt_enum(selected_index, choices));
+        self.set_value(crate::Value::nt_enum(selected_index, choices))?;
         Ok(())
     }
 
-    /// Replace the current value of this shared PV.
-    pub fn post(&mut self, value: crate::Value) -> Result<()> {
-        if self.readonly {
-            return Err(PvxsError::new("SharedPV is readonly"));
+    /// Check whether this PV currently has an open value.
+    pub fn is_open(&self) -> bool {
+        self.state
+            .lock()
+            .map(|state| state.value.is_some())
+            .unwrap_or(false)
+    }
+
+    /// Close this PV and discard its current value.
+    pub fn close(&mut self) -> Result<()> {
+        self.state()?.value = None;
+        Ok(())
+    }
+
+    /// Post a double value and notify users of this PV.
+    ///
+    /// For a double-array PV, this replaces the first array element.
+    pub fn post_double(&mut self, value: f64) -> Result<()> {
+        let current = self.fetch()?;
+        let updated = match current.type_of("value") {
+            Some(FieldType::Double) => crate::Value::nt_scalar_double(value),
+            Some(FieldType::DoubleArray) => {
+                let mut values = current.get_field_double_array("value")?;
+                let first = values
+                    .first_mut()
+                    .ok_or_else(|| PvxsError::new("Cannot update an empty double array"))?;
+                *first = value;
+                crate::Value::nt_scalar_array_double(values)
+            }
+            _ => return Err(PvxsError::new("SharedPV does not contain a double value")),
+        };
+        self.set_value(updated)
+    }
+
+    /// Post an int32 value and notify users of this PV.
+    ///
+    /// For an int32-array PV, this replaces the first array element.
+    pub fn post_int32(&mut self, value: i32) -> Result<()> {
+        let current = self.fetch()?;
+        let updated = match current.type_of("value") {
+            Some(FieldType::Int32) => crate::Value::nt_scalar_int32(value),
+            Some(FieldType::Int32Array) => {
+                let mut values = current.get_field_int32_array("value")?;
+                let first = values
+                    .first_mut()
+                    .ok_or_else(|| PvxsError::new("Cannot update an empty int32 array"))?;
+                *first = value;
+                crate::Value::nt_scalar_array_int32(values)
+            }
+            _ => return Err(PvxsError::new("SharedPV does not contain an int32 value")),
+        };
+        self.set_value(updated)
+    }
+
+    /// Post a string value and notify users of this PV.
+    pub fn post_string(&mut self, value: &str) -> Result<()> {
+        self.require_type(FieldType::String)?;
+        self.set_value(crate::Value::nt_scalar_string(value))
+    }
+
+    /// Post an enum index and preserve the PV's existing choices.
+    pub fn post_enum(&mut self, value: i16) -> Result<()> {
+        let current = self.fetch()?;
+        if current.type_of("value") != Some(FieldType::Enum) {
+            return Err(PvxsError::new("SharedPV does not contain an enum value"));
         }
-        self.value = Some(value);
+        let choices = current.get_field_string_array("value.choices")?;
+        if value < 0 || value as usize >= choices.len() {
+            return Err(PvxsError::new("Enum index is outside the choices array"));
+        }
+        self.set_value(crate::Value::nt_enum(value, choices))
+    }
+
+    /// Post a non-empty double array and notify users of this PV.
+    pub fn post_double_array(&mut self, value: &[f64]) -> Result<()> {
+        if value.is_empty() {
+            return Err(PvxsError::new("Cannot post empty double array"));
+        }
+        self.require_type(FieldType::DoubleArray)?;
+        self.set_value(crate::Value::nt_scalar_array_double(value.to_vec()))
+    }
+
+    /// Post a non-empty int32 array and notify users of this PV.
+    pub fn post_int32_array(&mut self, value: &[i32]) -> Result<()> {
+        if value.is_empty() {
+            return Err(PvxsError::new("Cannot post empty int32 array"));
+        }
+        self.require_type(FieldType::Int32Array)?;
+        self.set_value(crate::Value::nt_scalar_array_int32(value.to_vec()))
+    }
+
+    /// Post a non-empty string array and notify users of this PV.
+    pub fn post_string_array(&mut self, value: &[String]) -> Result<()> {
+        if value.is_empty() {
+            return Err(PvxsError::new("Cannot post empty string array"));
+        }
+        self.require_type(FieldType::StringArray)?;
+        self.set_value(crate::Value::nt_scalar_array_string(value.to_vec()))
+    }
+
+    /// Fetch the current structured value.
+    pub fn fetch(&self) -> Result<crate::Value> {
+        self.current()
+            .ok_or_else(|| PvxsError::new("SharedPV is closed"))
+    }
+
+    /// Return the current value, or `None` when the PV is closed.
+    pub(crate) fn current(&self) -> Option<crate::Value> {
+        self.state.lock().ok()?.value.clone()
+    }
+
+    fn state(&self) -> Result<std::sync::MutexGuard<'_, SharedPVState>> {
+        self.state
+            .lock()
+            .map_err(|_| PvxsError::new("SharedPV state lock poisoned"))
+    }
+
+    fn set_value(&self, value: crate::Value) -> Result<()> {
+        self.state()?.value = Some(value);
         Ok(())
     }
 
-    /// Return the current value stored by this shared PV.
-    pub fn current(&self) -> Option<crate::Value> {
-        self.value.clone()
+    fn require_type(&self, expected: FieldType) -> Result<()> {
+        let current = self.fetch()?;
+        if current.type_of("value") == Some(expected) {
+            Ok(())
+        } else {
+            Err(PvxsError::new(format!(
+                "SharedPV does not contain a {expected:?} value"
+            )))
+        }
+    }
+
+    fn is_readonly(&self) -> Result<bool> {
+        Ok(self.state()?.readonly)
     }
 }
 
-/// Compatibility wrapper mirroring `pvxs-sys::StaticSource`.
-/// Compatibility wrapper mirroring `pvxs-sys::StaticSource`.
+/// A named collection of shared PVs that can be attached to a server.
+///
+/// # Example
+///
+/// ```rust
+/// use pvxs::{SharedPV, StaticSource};
+///
+/// let mut source = StaticSource::create()?;
+/// let mut temperature = SharedPV::create_readonly()?;
+/// source.add_pv("temperature", &mut temperature)?;
+/// # Ok::<(), pvxs::PvxsError>(())
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct StaticSource {
     pvs: HashMap<String, SharedPV>,
 }
 
 impl StaticSource {
-    /// Create a new empty static source.
-    pub fn new() -> Self {
-        Self::default()
+    /// Create an empty static source.
+    pub fn create() -> Result<Self> {
+        Ok(Self::default())
     }
 
     /// Add a shared PV under the provided name.
-    pub fn add(&mut self, name: &str, pv: SharedPV) -> Result<()> {
+    pub fn add_pv(&mut self, name: &str, pv: &mut SharedPV) -> Result<()> {
+        self.insert(name, pv.clone())
+    }
+
+    /// Remove a PV from this source.
+    pub fn remove_pv(&mut self, name: &str) -> Result<()> {
+        self.pvs
+            .remove(name)
+            .map(|_| ())
+            .ok_or_else(|| PvxsError::new(format!("PV '{name}' does not exist")))
+    }
+
+    /// Close every PV in this source.
+    pub fn close_all(&mut self) -> Result<()> {
+        for pv in self.pvs.values_mut() {
+            pv.close()?;
+        }
+        Ok(())
+    }
+
+    fn insert(&mut self, name: &str, pv: SharedPV) -> Result<()> {
         if self.pvs.contains_key(name) {
             return Err(PvxsError::new(format!("PV '{name}' already exists")));
         }
@@ -1051,8 +1236,6 @@ impl StaticSource {
 // ============================================================================
 
 /// Clone-able, thread-safe handle to a running server.
-///
-/// Mirrors `pvxs-sys::ServerHandle` exactly.
 #[derive(Clone)]
 pub struct ServerHandle {
     tx: channel::Sender<ManagerCommand>,
@@ -1094,7 +1277,7 @@ impl ServerHandle {
     }
 
     /// Add a shared PV to the running server.
-    pub fn add_shared_pv(&self, name: &str, pv: SharedPV) -> Result<()> {
+    pub(crate) fn add_shared_pv(&self, name: &str, pv: SharedPV) -> Result<()> {
         let value = pv
             .current()
             .ok_or_else(|| PvxsError::new("SharedPV must be opened before adding"))?;
@@ -1159,7 +1342,7 @@ impl ServerHandle {
             }
         }
 
-        if pv.readonly {
+        if pv.is_readonly()? {
             self.set_readonly(name, true)?;
         }
 
@@ -1167,7 +1350,7 @@ impl ServerHandle {
     }
 
     /// Add all shared PVs from a static source to the running server.
-    pub fn add_source(&self, source: StaticSource) -> Result<()> {
+    pub(crate) fn add_source(&self, source: StaticSource) -> Result<()> {
         for (name, pv) in source.pvs {
             self.add_shared_pv(&name, pv)?;
         }
@@ -1502,9 +1685,6 @@ impl ServerHandle {
 // ============================================================================
 
 /// Pure-Rust pvAccess server with automatic alarm management.
-///
-/// Mirrors `pvxs-sys::Server` exactly — same method names and signatures.
-/// The in-process registry and pvAccess TCP/UDP transport are functional.
 pub struct Server {
     handle: ServerHandle,
     join: Option<thread::JoinHandle<()>>,
@@ -1834,12 +2014,14 @@ impl Server {
     }
 
     /// Add a shared PV to the running server.
-    pub fn add_shared_pv(&self, name: &str, pv: SharedPV) -> Result<()> {
+    #[allow(dead_code)]
+    pub(crate) fn add_shared_pv(&self, name: &str, pv: SharedPV) -> Result<()> {
         self.handle.add_shared_pv(name, pv)
     }
 
     /// Add all shared PVs from a static source to the running server.
-    pub fn add_source(&self, source: StaticSource) -> Result<()> {
+    #[allow(dead_code)]
+    pub(crate) fn add_source(&self, source: StaticSource) -> Result<()> {
         self.handle.add_source(source)
     }
 

@@ -1,6 +1,6 @@
 # pvxs-rs
 
-pvxs-rs is a pure Rust implementation of EPICS PVXS-style APIs for the EPICS PVXS, designed to keep application code familiar while removing native build friction: no C++ toolchain, no EPICS_BASE setup, and no PVXS DLL runtime packaging. (Historical note: `pvxs-sys` remains usable and was the earlier Rust PVXS wrapper around `pvxs.dll`, `ca.dll`, and `com.dll`.)
+pvxs-rs is a pure Rust implementation of low level EPICS PVAccess protocol, with pure rust reimplementation of APIs from the [EPICS PVXS library](https://epics-base.github.io/pvxs/), designed to keep application code familiar while removing native build friction: no C++ toolchain, no EPICS_BASE setup, and no PVXS DLL runtime packaging. (Historical note: `pvxs-sys` remains usable and was the earlier Rust PVXS wrapper around `pvxs.dll`, `ca.dll`, and `com.dll`.)
 
 ## Install
 

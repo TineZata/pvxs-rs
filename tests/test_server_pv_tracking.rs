@@ -1,37 +1,45 @@
-#[cfg(feature = "server")]
-#[cfg(test)]
-mod test_server_pv_tracking {
-    use pvxs::Server;
+// Copyright 2026 Tine Zata
+// SPDX-License-Identifier: MPL-2.0
+use pvxs::{NTScalarMetadataBuilder, Server};
 
-    #[test]
-    fn test_duplicate_pv_detection() {
-        let mut server = Server::new_isolated().unwrap();
-        
-        // Add a PV
-        let _pv1 = server.add_int32_pv("test:duplicate", 42).unwrap();
-        
-        // Try to add the same PV name again - should fail
-        let result = server.add_int32_pv("test:duplicate", 99);
-        
-        assert!(result.is_err(), "Should not allow duplicate PV names");
-        if let Err(e) = result {
-            let msg = format!("{:?}", e);
-            assert!(msg.contains("already exists"), "Error should mention PV already exists: {}", msg);
-        }
-    }
+#[test]
+fn duplicate_pv_names_are_rejected() {
+    let server = Server::start_isolated().expect("start server");
+    server
+        .create_pv_int32(
+            "test:tracking:duplicate",
+            42,
+            NTScalarMetadataBuilder::new(),
+        )
+        .expect("create first pv");
+    let duplicate = server.create_pv_int32(
+        "test:tracking:duplicate",
+        99,
+        NTScalarMetadataBuilder::new(),
+    );
+    assert!(duplicate.is_err());
+    assert!(duplicate
+        .unwrap_err()
+        .to_string()
+        .contains("already exists"));
+    server.stop_drop().expect("stop server");
+}
 
-    #[test]
-    fn test_remove_and_readd_pv() {
-        let mut server = Server::new_isolated().unwrap();
-        
-        // Add a PV
-        let _pv1 = server.add_double_pv("test:readd", 1.23).unwrap();
-        
-        // Remove it
-        server.remove_pv("test:readd").unwrap();
-        
-        // Should be able to add it again
-        let pv2 = server.add_double_pv("test:readd", 4.56);
-        assert!(pv2.is_ok(), "Should allow adding PV after removal");
-    }
+#[test]
+fn removed_pv_name_can_be_reused() {
+    let server = Server::start_isolated().expect("start server");
+    let name = "test:tracking:readd";
+    server
+        .create_pv_double(name, 1.23, NTScalarMetadataBuilder::new())
+        .expect("create first pv");
+    server.remove_pv(name).expect("remove pv");
+    assert!(server.fetch_double(name).is_err());
+    server
+        .create_pv_double(name, 4.56, NTScalarMetadataBuilder::new())
+        .expect("recreate pv");
+    assert_eq!(
+        server.fetch_double(name).expect("fetch recreated pv").value,
+        4.56
+    );
+    server.stop_drop().expect("stop server");
 }

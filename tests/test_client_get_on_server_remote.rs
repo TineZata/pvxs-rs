@@ -1,36 +1,25 @@
-use pvxs::{Server, Client};
-use tokio_test::assert_ok;
-use std::thread;
+// Copyright 2026 Tine Zata
+// SPDX-License-Identifier: MPL-2.0
+use pvxs::{Context, NTScalarMetadataBuilder, Server};
 
-#[cfg(feature = "client")]
-#[cfg(feature = "server")]
+fn context_for(server: &Server) -> Context {
+    std::env::set_var("EPICS_PVA_ADDR_LIST", format!("127.0.0.1:{}", server.udp_port()));
+    std::env::set_var("EPICS_PVA_AUTO_ADDR_LIST", "NO");
+    std::env::set_var("EPICS_PVA_BROADCAST_PORT", server.udp_port().to_string());
+    Context::from_env().expect("context from env")
+}
+
 #[test]
-fn test_client_get_on_server_remote() -> Result<(), Box<dyn std::error::Error>> {
-    let name = "TEST:PV:REMOTE";
-    let start_value = 100;
-    // Create server with a single PV
-    let mut server = Server::new()?;
+fn client_get_reads_server_value() {
+    let server = Server::start_isolated().expect("start server");
+    let name = "test:remote:get:int32";
+    server
+        .create_pv_int32(name, 100, NTScalarMetadataBuilder::new())
+        .expect("create int32 pv");
 
-    let mut pv = server.add_int32_pv(name, start_value)?;
-    // Start the server
-    server.start()?;
-    // Give server time to start
-    thread::sleep(std::time::Duration::from_millis(100));
+    let mut context = context_for(&server);
+    let value = context.get(name, 2.0).expect("get int32");
+    assert_eq!(value.get_field_int32("value").expect("value"), 100);
 
-    // Server should be listening on a port
-    assert!(server.tcp_port() > 0 || server.udp_port() > 0);
-
-    // Check the data is the expected start value, doing a fetch
-    let fetched_value = pv.fetch()?;
-    let fetched_int = fetched_value.as_int()?;
-    assert_eq!(fetched_int, start_value);
-
-    // Instantiate a client
-    let mut client = Client::new()?;
-    // Client should be able to get the value from the server
-    let client_value = assert_ok!(client.get(name, 3.0));
-    let client_int = client_value.as_int()?;
-    assert_eq!(client_int, start_value);
-
-    Ok(())
+    server.stop_drop().expect("stop server");
 }

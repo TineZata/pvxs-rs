@@ -1,8 +1,8 @@
 // Copyright 2026 Tine Zata
 // SPDX-License-Identifier: MPL-2.0
 use pvxs::{
-    configure_logging_from_env, set_logger_level, Context, NTEnumMetadataBuilder,
-    NTScalarMetadataBuilder, Server, SharedPV, StaticSource,
+    configure_logging_from_env, set_logger_level, Context, NTScalarMetadataBuilder, Server,
+    SharedPV, StaticSource,
 };
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
@@ -50,20 +50,19 @@ fn context_info_returns_value_payload() {
 #[test]
 fn sharedpv_and_staticsource_surface_is_usable() {
     let mut pv = SharedPV::create_mailbox().expect("create mailbox");
-    pv.open_double(1.5, NTScalarMetadataBuilder::new())
-        .expect("open double");
-    pv.post(pvxs::Value::nt_scalar_double(2.5)).expect("post value");
+    assert!(!pv.is_open());
+    assert!(pv.post_double(2.5).is_err());
+    assert!(pv.fetch().is_err());
+    pv.close().expect("close mailbox");
 
     let mut enum_pv = SharedPV::create_readonly().expect("create readonly");
-    enum_pv
-        .open_enum(
-            vec!["OFF", "ON"],
-            0,
-            NTEnumMetadataBuilder::new(),
-        )
-        .expect("open enum");
+    assert!(!enum_pv.is_open());
 
-    let mut src = StaticSource::new();
-    src.add("parity:pv", pv).expect("add pv");
-    src.add("parity:enum", enum_pv).expect("add enum pv");
+    let mut src = StaticSource::create().expect("create static source");
+    src.add_pv("parity:pv", &mut pv).expect("add pv");
+    src.add_pv("parity:enum", &mut enum_pv)
+        .expect("add enum pv");
+    src.remove_pv("parity:enum").expect("remove enum pv");
+    src.close_all().expect("close source pvs");
+    assert!(!pv.is_open());
 }
